@@ -21,6 +21,9 @@ updated as new records are released. There are some similar adjustments to
 report date data, but they are much less systematic; typically, once the data
 report for a particular date is made, it is not subsequently updated.
 
+
+## Models
+
 In an investigation of the utility of case data for forecasting hospitalizations,
 it is necessary to carefully consider whether we use cases by test date or by
 report date. If we are using test date data, we must also consider the impact of
@@ -36,10 +39,10 @@ date cases as an input to forecasting hospitalizations.
 3. We consider three variations on models using test date cases as an input to
 forecasting hospitalizations, with different strategies for handling the
 backfill process:
-    a. **TestCaseFinal**: This model uses ``final" reported values of test date
+    a. **TestCaseFinal**: This model uses ``final" values of test date
     cases as an input. In practice, we use the reported test date cases from
     (some time when values have stabilized).
-    b. **TestCaseRealTime**: This model uses the reported values of test date
+    b. **TestCaseRealTime**: This model uses the values of test date
     cases that would have been available for forecasting in real time, with no
     adjustments for partial reporting.
     c. **TestCaseNowcast**: This model uses nowcasts of test date cases as an
@@ -55,3 +58,18 @@ forecast skill of these models:
  * In an ideal setting without reporting delay, is the more-epidemiologically-relevant signal of test date cases helpful for forecasting hosps? Compare models 1 and 3a, and/or models 2 and 3a.
  * In the real-world setting with reporting delay, is directly using as-of reported cases helpful for forecasting hosps? Compare models 1 and 3b, and/or 3a and 3b
  * In the real-world setting with reporting delay, is using as-of reported cases adjusted for that reporting delay helpful for forecasting hosps? Compare models 1 and 3c, and/or 3a and 3c, and/or 3b and 3c
+
+Other thoughts
+
+ * We probably shouldn't put any time into thinking about actual nowcasting implementations until we've done the 1-3a and/or 1-3b comparisons and seen something indicating this could be useful.
+ * If a message like "using as of test date cases isn't super helpful, but using final reported test date cases would be helpful if they were available; nowcasting is a possible future direction to close this gap" is good enough, we could leave it out of this work
+
+## Forecast targets
+
+In this analysis, we focus on having models make forecasts of several specific targets with public health relevance. 
+
+ * Predictions of 1- to 30-day ahead incident hospitalizations. These forecasts will be structured identically to the COVID-19 Forecast Hub, to facilitate comparisons with those models if desired. These forecasts will be generated retrospectively, once for ever week, using data that were available as of each Monday of a given week.
+ * Predictions of the date at which incident hospitalizations reach their peak, for selected waves. Specifically, we will assume that forecasts for peak hospitalizations were solicited for the late-summer Delta surge in Massachusetts from mid-July 2021 through mid-October and then again for the Omicron surge from mid-November 2021 through early February 2022.
+ * [should we include peak value as well?]
+
+Ground truth data for incident hospitalizations are taken from the HealthData.gov (HHS) source. [It probably makes things much simpler to use these data as ground truth for everything, but I am tempted to consider a smoothed version, say centered moving window of current day +/- 3 days on either side, of the daily hospitalization data as the ground truth target for peak timing.] The peak day will be defined as the day on which the peak number of new incident cases was observed. In case of a tie, the day with a higher centered moving average (+/- 3 days on either side) will be chosen as the day of the peak.
