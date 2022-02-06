@@ -1,4 +1,5 @@
 ## scrape and save xls files from DPH
+## archive of data on this page: https://www.mass.gov/info-details/archive-of-covid-19-cases-in-massachusetts
 ## urls take the form: https://www.mass.gov/doc/covid-19-raw-data-february-2-2022/download
 
 library(lubridate)
