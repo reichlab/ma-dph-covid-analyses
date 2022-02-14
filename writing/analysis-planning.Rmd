@@ -32,6 +32,8 @@ formulate five model variations. All of these use past hospitalizations as an
 input to forecasting; four of them use different variations on case data and
 different strategies for addressing partial reporting for those case data.
 
+So that we can focus on understanding the importance of the different variations of case data on modeling hospitalizations, all of the models below will use hospitalization data retrieved at a single point when the analysis was run. While this ignores possible small revisions that occured since the data were initially reported, this focuses the analysis on the question at hand. (We could provide some summary stats about revisions of hosp data in MA.)
+
 1. **Solo**: A reference model that forecasts hospitalizations using only the
 past reported values of hospitalizations as an input.
 2. **ReportCaseRealTime**: In addition to past hospitalizations, this model uses report
