@@ -1,0 +1,200 @@
+---
+title: "ARIMA"
+author: "Estee Y Cramer"
+date: "2/23/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Libraries
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(covidHubUtils)
+library(fpp3)
+library(fable)
+```
+
+
+# Load Truth Data 
+
+
+```{r, message=FALSE, warning=FALSE}
+hosp_truth <- load_truth(
+  truth_source = "HealthData",
+  target_variable = "inc hosp",
+  locations = "25") %>% 
+  filter(target_end_date <= as.Date("2021-07-01"))
+
+record_date_case_truth <- load_truth(
+  truth_source = "JHU",
+  target_variable = "inc case",
+  temporal_resolution = "daily",
+  locations = "25") %>% 
+  filter(target_end_date <= as.Date("2021-07-01"))
+
+test_date_case_truth <- read.csv("../csv-data/MA-DPH-csvdata-covid-2022-02-02.csv") %>%  #chose latest issue date from csv files
+  mutate(issue_date = "2022-02-02") %>% 
+  mutate(Date = substr(Date, 1, 10)) %>% 
+  mutate(Date = as.Date(Date)) %>% 
+  filter(Date <= as.Date("2021-07-01"))
+```
+
+
+# Clean Data
+```{r}
+ts_report_date_case <- record_date_case_truth %>% 
+  filter(target_end_date <= "2021-06-01") %>% #keep only data prior to June 1st
+  select(target_end_date, report_case_val = value) %>%  #change variable names
+  as_tsibble() %>% 
+  tsibble::fill_gaps()
+
+ts_test_date_case <- test_date_case_truth %>% 
+  filter(Date <= as.Date("2021-06-01")) %>%
+  select(target_end_date = Date, test_case_val = Positive.New) %>% 
+  as_tsibble() %>% 
+  tsibble::fill_gaps() 
+
+ts_hosp <- hosp_truth %>%
+  filter(target_end_date <= "2021-06-01") %>%
+  as_tsibble() %>% 
+  select(target_end_date, hosp_val = value) %>% 
+  tsibble::fill_gaps()
+
+
+merge_all_ts <- ts_hosp %>%  #merge all datasets together
+  left_join(ts_report_date_case) %>%
+  left_join(ts_test_date_case)
+```
+
+
+# Fit ARIMA models
+
+
+# Fit model with no case data inputs
+```{r}
+#write model for ARIMA with only hospitalizations 
+fit_hosp_alone <- merge_all_ts %>%
+  model(ARIMA(hosp_val)) 
+
+report(fit_hosp_alone)
+
+fit_hosp_alone %>% forecast(h=28) %>%
+  autoplot(merge_all_ts) +
+  labs(y = "Hospitalizations", title = "ARIMA Forecast Hospitalizations made with data prior to 2021-06-01")
+
+```
+
+## set rolling lag for case data 
+```{r}
+test_future_hosp <- new_data(merge_all_ts,28, keep_all = TRUE) 
+rolling_avg <- bind_rows(merge_all_ts, test_future_hosp)
+  
+rolling_avg <- rolling_avg %>%
+  mutate(rolling_35day_report = RcppRoll::roll_mean(report_case_val,35, fill=NA, align="right", na.rm = TRUE)) %>%
+  mutate(rolling_35day_test = RcppRoll::roll_mean(test_case_val,35, fill=NA, align="right", na.rm = TRUE))
+```
+
+
+## Determine if model with record data is better with a lag  
+
+```{r}
+#fit model of hospitalizations with lags from cases by report date 
+fit_lag_cases_report <- merge_all_ts %>%
+  # Estimate models
+  model(
+    lag0 = ARIMA(hosp_val ~ pdq(d = 0) + report_case_val),
+    lag1 = ARIMA(hosp_val ~ pdq(d = 0) + report_case_val + lag(report_case_val)),
+    lag2 = ARIMA(hosp_val ~ pdq(d = 0) +
+                 report_case_val + lag(report_case_val) + lag(report_case_val, 2)),
+    lag3 = ARIMA(hosp_val ~ pdq(d = 0) +
+                 report_case_val + lag(report_case_val) + lag(report_case_val, 2) + lag(report_case_val, 3))
+  )
+
+
+glance(fit_lag_cases_report) #best fit based on a model with 3 lags. Based on AIC and BIC
+
+record_future_hosp <- new_data(merge_all_ts,28) %>% mutate(report_case_val = tail(rolling_avg$rolling_35day_report,28))
+
+fit_lag_cases_report %>%
+  forecast(record_future_hosp) %>%
+  autoplot(merge_all_ts %>% filter( target_end_date >= "2021-04-01")) +
+  labs(
+    y = "Hospitalizations",
+    title = "Forecast record date with value lag set to mean 35 day average "
+  )
+```
+
+
+## Determine if model with test date data is better with a lag  
+
+```{r}
+#fit model of hospitalizations with lags from cases by test date 
+fit_lag_cases_test <- merge_all_ts %>%
+  # Estimate models
+  model(
+    lag0 = ARIMA(hosp_val ~ pdq(d = 0) + test_case_val),
+    lag1 = ARIMA(hosp_val ~ pdq(d = 0) + test_case_val + lag(test_case_val)),
+    lag2 = ARIMA(hosp_val ~ pdq(d = 0) + test_case_val + lag(test_case_val) + lag(test_case_val, 2)),
+    lag3 = ARIMA(hosp_val ~ pdq(d = 0) + test_case_val + lag(test_case_val) + lag(test_case_val, 2) + lag(test_case_val, 3))
+  )
+
+
+glance(fit_lag_cases_test) #best fit is model with 0 lags. Based on AIC and BIC
+
+test_future_hosp <- new_data(merge_all_ts,28) %>% mutate(test_case_val = tail(rolling_avg$rolling_35day_test,28))
+
+fit_lag_cases_test %>%
+  forecast(test_future_hosp) %>%
+  autoplot(merge_all_ts %>% filter( target_end_date >= "2021-04-01")) +
+  labs(
+    y = "Hospitalizations",
+    title = "Forecast record date with value lag set to mean 35 day avg. Test date data"
+  )
+```
+
+
+
+<!-- test date with lag of 8 -->
+<!-- ```{r} -->
+<!-- fit_testdate <- test_date_hosp_truth %>%  -->
+<!--   filter(Date <= as.Date("2021-06-01")) %>% -->
+<!--   as_tsibble() %>%  -->
+<!--   tsibble::fill_gaps() %>% -->
+<!--   model(ARIMA(Positive.New)) -->
+
+<!-- report(fit_testdate) -->
+
+<!-- # fit_testdate %>% forecast(h=28) %>% -->
+<!-- #   autoplot(test_date_hosp_truth %>% filter(Date <= as.Date("2021-07-31"))) + -->
+<!-- #   labs(y = "Hospitalizations", title = "ARIMA forecast hospitalizations Report Date") -->
+<!-- #  -->
+
+<!-- fit_lag_test <- test_date_hosp_truth %>% -->
+<!--    filter(Date <= as.Date("2021-06-01")) %>% -->
+<!--   as_tsibble() %>%  -->
+<!--   tsibble::fill_gaps() %>% -->
+<!--   model( -->
+<!--     lag0 = ARIMA(Positive.New ~ pdq(d = 0) ), -->
+<!--     lag1 = ARIMA(Positive.New  ~ pdq(d = 0) + lag(Positive.New)), -->
+<!--     lag2 = ARIMA(Positive.New  ~ pdq(d = 0) + lag(Positive.New) + lag(Positive.New, 2)), -->
+<!--     lag3 = ARIMA(Positive.New  ~ pdq(d = 0)  + lag(Positive.New) + lag(Positive.New, 2) + lag(Positive.New, 3)) -->
+<!--   ) -->
+
+<!-- glance(fit_lag_test) #best fit based is a model with 3 lags. Based on AIC and BIC -->
+
+
+<!-- test_future <- new_data(test_date_hosp_truth %>% filter(Date <= as.Date("2021-06-01")) %>% -->
+<!--   as_tsibble() %>%  tsibble::fill_gaps(),20) %>% -->
+<!--   mutate(Positive.New = 8) -->
+
+<!-- fit_lag_test %>% -->
+<!--   forecast(test_future) %>% -->
+<!--   autoplot(test_date_hosp_truth %>% filter(Date <= as.Date("2021-07-31") & Date >= as.Date("2021-04-01"))) + -->
+<!--   labs( -->
+<!--     y = "Hospitalizations", -->
+<!--     title = "Forecast test date with value lag set to 8" -->
+<!--   ) -->
+<!-- ``` -->
