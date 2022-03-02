@@ -1,7 +1,7 @@
 ---
-title: "ARIMA"
-author: "Estee Y Cramer"
-date: "2/23/2022"
+title: "ARIMA modeling for COVID hospitalizations in Massachusetts"
+author: "Estee Y Cramer, Nick Reich"
+date: "`r Sys.Date()`"
 output: html_document
 ---
 
@@ -18,89 +18,161 @@ library(fable)
 ```
 
 
-# Load Truth Data 
+# Set some global parameters for analysis
 
+```{r}
+hosp_data_start_date <- as.Date("2020-08-01")
+case_data_start_date <- as.Date("2020-03-01")
+forecast_date <- as.Date("2021-06-01")
+```
+
+
+# Load and clean truth data 
+
+This code builds three "truth" datasets for hospitalizations, cases by report date and cases by test date. All three datasets go up through the `forecast_date` specified above (`r forecast_date`). Cases start at `r case_data_start_date` and hospitalizations start at `r hosp_data_start_date`. Filtering out observations with negative values (one observation for cases by report date).
 
 ```{r, message=FALSE, warning=FALSE}
 hosp_truth <- load_truth(
   truth_source = "HealthData",
   target_variable = "inc hosp",
   locations = "25") %>% 
-  filter(target_end_date <= as.Date("2021-07-01"))
+  filter(target_end_date <= forecast_date, target_end_date >= hosp_data_start_date)
 
-record_date_case_truth <- load_truth(
+report_date_case_truth <- load_truth(
   truth_source = "JHU",
   target_variable = "inc case",
   temporal_resolution = "daily",
   locations = "25") %>% 
-  filter(target_end_date <= as.Date("2021-07-01"))
+  filter(target_end_date <= forecast_date, target_end_date >= case_data_start_date, value >= 0)
 
 test_date_case_truth <- read.csv("../csv-data/MA-DPH-csvdata-covid-2022-02-02.csv") %>%  #chose latest issue date from csv files
   mutate(issue_date = "2022-02-02") %>% 
   mutate(Date = substr(Date, 1, 10)) %>% 
   mutate(Date = as.Date(Date)) %>% 
-  filter(Date <= as.Date("2021-07-01"))
+  filter(Date <= forecast_date, Date >= case_data_start_date)
 ```
 
 
-# Clean Data
+Turn the truth data above into `tsibbles` and standardize column names.
+
 ```{r}
-ts_report_date_case <- record_date_case_truth %>% 
-  filter(target_end_date <= "2021-06-01") %>% #keep only data prior to June 1st
+ts_report_date_case <- report_date_case_truth %>% 
   select(target_end_date, report_case_val = value) %>%  #change variable names
   as_tsibble() %>% 
   tsibble::fill_gaps()
 
 ts_test_date_case <- test_date_case_truth %>% 
-  filter(Date <= as.Date("2021-06-01")) %>%
   select(target_end_date = Date, test_case_val = Positive.New) %>% 
   as_tsibble() %>% 
   tsibble::fill_gaps() 
 
 ts_hosp <- hosp_truth %>%
-  filter(target_end_date <= "2021-06-01") %>%
   as_tsibble() %>% 
   select(target_end_date, hosp_val = value) %>% 
   tsibble::fill_gaps()
-
-
-merge_all_ts <- ts_hosp %>%  #merge all datasets together
-  left_join(ts_report_date_case) %>%
-  left_join(ts_test_date_case)
 ```
 
+Noting that there is `r sum(is.na(ts_report_date_case$report_case_val))` `NA` value in the cases by report date (the negative observation that was removed because it was negative). There are `r sum(ts_report_date_case$report_case_val==0, na.rm=TRUE)` values of zero, a few of which occurred at times of high incidence and should probably be removed from the dataset.
 
-# Fit ARIMA models
+
+# Fit hospitalization ARIMA model with no case data inputs
+
+Some modeling notes:
+
+ - Note that when using the `sqrt()` transformation for the model below, an error was returned saying "x `upper` can't be lower than `lower`.", which perhaps was arising because of problems taking the square root with numbers between 0 and 1 and the sqrt transformation then making these values larger instead of smaller.
+
+ - A by default the periodicity for the seasonal part of an `ARIMA()` model for daily data appears to be specified to be 1 week. setting it explicitly to be 14 below. Is there a more reasonable choice for the periodicity for seasonality? what features does this capture, and could we use our knowledge of the system to inform this in a more systematic way?
+ 
+ - Interesting to note that the dataset initially contained some empty rows of observations for early July when there were no hospitalizations, and this increased the PI width quite a bit. When those rows were removed, the intervals become quite a bit narrower. 
 
 
-# Fit model with no case data inputs
+The following model is a SARIMA model that uses observed hospitalization data and fixes a 14 day period in the seasonal part of the model. We subset to only observations starting August 1, 2020 as this is around when the hospitalization data turned on and became consistently reported.
 ```{r}
 #write model for ARIMA with only hospitalizations 
-fit_hosp_alone <- merge_all_ts %>%
-  model(ARIMA(hosp_val)) 
+fit_hosp_alone <- ts_hosp %>%
+  filter(target_end_date >= as.Date("2020-08-01")) %>%
+  model(ARIMA(log(hosp_val+1) ~ pdq() + PDQ(period=14))) 
 
 report(fit_hosp_alone)
 
-fit_hosp_alone %>% forecast(h=28) %>%
-  autoplot(merge_all_ts) +
+fit_hosp_alone %>% 
+  forecast(h=28) %>%
+  autoplot(ts_hosp) +
   labs(y = "Hospitalizations", title = "ARIMA Forecast Hospitalizations made with data prior to 2021-06-01")
 
 ```
 
-## set rolling lag for case data 
+
+# One SARIMAX model for hospitalizations with forecasted cases by report
+
+### Fit model for case data to fill in observations for prediction
+
+Here is a plot of the case data by report date.
 ```{r}
-test_future_hosp <- new_data(merge_all_ts,28, keep_all = TRUE) 
-rolling_avg <- bind_rows(merge_all_ts, test_future_hosp)
+autoplot(ts_report_date_case)
+```
+
+And here is the SARIMA forecast, with default "seasonal" period of 1 week.
+```{r}
+model_cases_by_report <- ts_report_date_case %>%
+  model(ARIMA(log(report_case_val+1)))
+
+report(model_cases_by_report)
+
+new_case_by_report_data <- model_cases_by_report %>% 
+  forecast(h=28) 
+
+new_case_by_report_data %>%
+  autoplot(ts_report_date_case) +
+  labs(y = "cases by report date", title = "ARIMA Forecast of cases by report date")
+```
+
+## Use predicted cases by report date for SARIMAX model
+
+Noting that once we select a fixed day of the week on which to have the forecasts, we might want to select lags that we know work with that, e.g. if we pick a monday, the lag 1, 8, 15, etc... will always be Sunday data which may not be that informative. Below, we chose lags of 5, 10, 15 and 20 days for the case data. None of which end up having substantial coefficients.
+```{r, message=TRUE}
+all_cases_by_report_date <- ts_report_date_case %>%
+  bind_rows(select(tsibble(new_case_by_report_data), target_end_date, report_case_val = `.mean`))
+
+hosps_and_case_by_report_data <- ts_hosp %>%
+  full_join(all_cases_by_report_date) %>%
+  mutate(report_case_lag5 = lag(report_case_val, 5),
+         report_case_lag10 = lag(report_case_val, 10),
+         report_case_lag15 = lag(report_case_val, 15),
+         report_case_lag20 = lag(report_case_val, 20)) %>%
+  ## filter comes last to make sure we have lags early in the filtered dataset
+  filter(target_end_date >= hosp_data_start_date)
   
-rolling_avg <- rolling_avg %>%
-  mutate(rolling_35day_report = RcppRoll::roll_mean(report_case_val,35, fill=NA, align="right", na.rm = TRUE)) %>%
-  mutate(rolling_35day_test = RcppRoll::roll_mean(test_case_val,35, fill=NA, align="right", na.rm = TRUE))
+hosps_and_case_by_report_model <- hosps_and_case_by_report_data %>%
+  filter(target_end_date <= forecast_date) %>%
+  model(ARIMA(log(hosp_val+1) ~ report_case_lag5 + report_case_lag10 + report_case_lag15 + report_case_lag20))
+
+report(hosps_and_case_by_report_model)
+
+hosps_and_case_by_report_model %>% 
+  forecast(new_data = filter(hosps_and_case_by_report_data, target_end_date > forecast_date))  %>%
+  autoplot(hosps_and_case_by_report_data) +
+  labs(y = "hospitalizations", title = "ARIMA Forecast of hospitalizations using cases by report date")
+```
+
+
+
+# SARIMAX models for hospitalizations with case data
+
+Temporarily setting `eval=FALSE` for below chunks.
+
+```{r, eval=FALSE}
+merge_all_ts <- ts_hosp %>%  #merge all datasets together
+  left_join(ts_report_date_case) %>%
+  left_join(ts_test_date_case) %>%
+  filter(target_end_date >= as.Date("2020-07-14"))
+
 ```
 
 
 ## Determine if model with record data is better with a lag  
 
-```{r}
+```{r, eval=FALSE}
 #fit model of hospitalizations with lags from cases by report date 
 fit_lag_cases_report <- merge_all_ts %>%
   # Estimate models
@@ -130,7 +202,7 @@ fit_lag_cases_report %>%
 
 ## Determine if model with test date data is better with a lag  
 
-```{r}
+```{r, eval=FALSE}
 #fit model of hospitalizations with lags from cases by test date 
 fit_lag_cases_test <- merge_all_ts %>%
   # Estimate models
@@ -155,46 +227,3 @@ fit_lag_cases_test %>%
   )
 ```
 
-
-
-<!-- test date with lag of 8 -->
-<!-- ```{r} -->
-<!-- fit_testdate <- test_date_hosp_truth %>%  -->
-<!--   filter(Date <= as.Date("2021-06-01")) %>% -->
-<!--   as_tsibble() %>%  -->
-<!--   tsibble::fill_gaps() %>% -->
-<!--   model(ARIMA(Positive.New)) -->
-
-<!-- report(fit_testdate) -->
-
-<!-- # fit_testdate %>% forecast(h=28) %>% -->
-<!-- #   autoplot(test_date_hosp_truth %>% filter(Date <= as.Date("2021-07-31"))) + -->
-<!-- #   labs(y = "Hospitalizations", title = "ARIMA forecast hospitalizations Report Date") -->
-<!-- #  -->
-
-<!-- fit_lag_test <- test_date_hosp_truth %>% -->
-<!--    filter(Date <= as.Date("2021-06-01")) %>% -->
-<!--   as_tsibble() %>%  -->
-<!--   tsibble::fill_gaps() %>% -->
-<!--   model( -->
-<!--     lag0 = ARIMA(Positive.New ~ pdq(d = 0) ), -->
-<!--     lag1 = ARIMA(Positive.New  ~ pdq(d = 0) + lag(Positive.New)), -->
-<!--     lag2 = ARIMA(Positive.New  ~ pdq(d = 0) + lag(Positive.New) + lag(Positive.New, 2)), -->
-<!--     lag3 = ARIMA(Positive.New  ~ pdq(d = 0)  + lag(Positive.New) + lag(Positive.New, 2) + lag(Positive.New, 3)) -->
-<!--   ) -->
-
-<!-- glance(fit_lag_test) #best fit based is a model with 3 lags. Based on AIC and BIC -->
-
-
-<!-- test_future <- new_data(test_date_hosp_truth %>% filter(Date <= as.Date("2021-06-01")) %>% -->
-<!--   as_tsibble() %>%  tsibble::fill_gaps(),20) %>% -->
-<!--   mutate(Positive.New = 8) -->
-
-<!-- fit_lag_test %>% -->
-<!--   forecast(test_future) %>% -->
-<!--   autoplot(test_date_hosp_truth %>% filter(Date <= as.Date("2021-07-31") & Date >= as.Date("2021-04-01"))) + -->
-<!--   labs( -->
-<!--     y = "Hospitalizations", -->
-<!--     title = "Forecast test date with value lag set to 8" -->
-<!--   ) -->
-<!-- ``` -->
