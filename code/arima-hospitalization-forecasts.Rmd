@@ -24,6 +24,7 @@ library(fable)
 hosp_data_start_date <- as.Date("2020-08-01")
 case_data_start_date <- as.Date("2020-03-01")
 forecast_date <- as.Date("2021-06-01")
+data_issue_date <- as.Date("2022-02-02")
 ```
 
 
@@ -46,7 +47,7 @@ report_date_case_truth <- load_truth(
   filter(target_end_date <= forecast_date, target_end_date >= case_data_start_date, value >= 0)
 
 test_date_case_truth <- read.csv("../csv-data/MA-DPH-csvdata-covid-2022-02-02.csv") %>%  #chose latest issue date from csv files
-  mutate(issue_date = "2022-02-02") %>% 
+  mutate(issue_date = data_issue_date) %>% 
   mutate(Date = substr(Date, 1, 10)) %>% 
   mutate(Date = as.Date(Date)) %>% 
   filter(Date <= forecast_date, Date >= case_data_start_date)
@@ -77,6 +78,21 @@ Noting that there is `r sum(is.na(ts_report_date_case$report_case_val))` `NA` va
 
 # Fit hospitalization ARIMA model with no case data inputs
 
+Some exploration of differencing around hospitalization data
+```{r}
+ts_hosp %>%
+  mutate(log_hosp = log(hosp_val),
+         log_hosp_diff = difference(log_hosp, 7),
+         log_hosp_diff2 = difference(log_hosp_diff, 1)) %>%
+  pivot_longer(-target_end_date) %>%
+  ggplot(aes(x=target_end_date, y=value)) +
+  geom_line() +
+  facet_grid(name~., scales="free_y")
+  
+```
+
+
+
 Some modeling notes:
 
  - Note that when using the `sqrt()` transformation for the model below, an error was returned saying "x `upper` can't be lower than `lower`.", which perhaps was arising because of problems taking the square root with numbers between 0 and 1 and the sqrt transformation then making these values larger instead of smaller.
@@ -87,11 +103,13 @@ Some modeling notes:
 
 
 The following model is a SARIMA model that uses observed hospitalization data and fixes a 14 day period in the seasonal part of the model. We subset to only observations starting August 1, 2020 as this is around when the hospitalization data turned on and became consistently reported.
+
+
 ```{r}
 #write model for ARIMA with only hospitalizations 
 fit_hosp_alone <- ts_hosp %>%
-  filter(target_end_date >= as.Date("2020-08-01")) %>%
-  model(ARIMA(log(hosp_val+1) ~ pdq() + PDQ(period=14))) 
+  filter(target_end_date >= hosp_data_start_date) %>%
+  model(ARIMA(log(hosp_val+1) ~ pdq() + PDQ(period=7))) 
 
 report(fit_hosp_alone)
 
