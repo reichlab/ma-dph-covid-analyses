@@ -103,12 +103,18 @@ Some modeling notes:
 
 The following model is a SARIMA model that uses observed hospitalization data and fixes a 7 day period in the seasonal part of the model. We subset to only observations starting August 1, 2020 as this is around when the hospitalization data turned on and became consistently reported.
 
-Here is a model with a SQRT transformation that doesn't seem to do what we want exactly (note the funny intervals at the end of the forecast period):
+Here is a model with a custom SQRT transformation that truncates before squaring again...:
 ```{r}
+my_sqrt <- function(x) {sqrt(x)}
+truncated_inv_sqrt <- function(x){
+  pmax(0,x)^2
+}
+my_sqrt <- new_transformation(my_sqrt, truncated_inv_sqrt)
+
 #write model for ARIMA with only hospitalizations 
 fit_hosp_alone_sqrt <- ts_hosp %>%
   filter(target_end_date >= hosp_data_start_date) %>%
-  model(ARIMA(sqrt(hosp_val))) 
+  model(ARIMA(my_sqrt(hosp_val))) 
 
 report(fit_hosp_alone_sqrt)
 
