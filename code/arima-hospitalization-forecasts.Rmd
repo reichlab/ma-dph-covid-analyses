@@ -88,7 +88,6 @@ ts_hosp %>%
   ggplot(aes(x=target_end_date, y=value)) +
   geom_line() +
   facet_grid(name~., scales="free_y")
-  
 ```
 
 
@@ -102,9 +101,24 @@ Some modeling notes:
  - Interesting to note that the dataset initially contained some empty rows of observations for early July when there were no hospitalizations, and this increased the PI width quite a bit. When those rows were removed, the intervals become quite a bit narrower. 
 
 
-The following model is a SARIMA model that uses observed hospitalization data and fixes a 14 day period in the seasonal part of the model. We subset to only observations starting August 1, 2020 as this is around when the hospitalization data turned on and became consistently reported.
+The following model is a SARIMA model that uses observed hospitalization data and fixes a 7 day period in the seasonal part of the model. We subset to only observations starting August 1, 2020 as this is around when the hospitalization data turned on and became consistently reported.
 
+Here is a model with a SQRT transformation that doesn't seem to do what we want exactly (note the funny intervals at the end of the forecast period):
+```{r}
+#write model for ARIMA with only hospitalizations 
+fit_hosp_alone_sqrt <- ts_hosp %>%
+  filter(target_end_date >= hosp_data_start_date) %>%
+  model(ARIMA(sqrt(hosp_val))) 
 
+report(fit_hosp_alone_sqrt)
+
+fit_hosp_alone_sqrt %>% 
+  forecast(h=28) %>%
+  autoplot(ts_hosp) +
+  labs(y = "Hospitalizations", title = "ARIMA Forecast Hospitalizations made with data prior to 2021-06-01")
+```
+
+Here is a log-scale model:
 ```{r}
 #write model for ARIMA with only hospitalizations 
 fit_hosp_alone <- ts_hosp %>%
@@ -117,7 +131,6 @@ fit_hosp_alone %>%
   forecast(h=28) %>%
   autoplot(ts_hosp) +
   labs(y = "Hospitalizations", title = "ARIMA Forecast Hospitalizations made with data prior to 2021-06-01")
-
 ```
 
 
