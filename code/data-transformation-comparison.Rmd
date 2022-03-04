@@ -73,7 +73,7 @@ truncated_inv_sqrt <- function(x){
 my_sqrt <- new_transformation(my_sqrt, truncated_inv_sqrt)
 ```
 
-Compare variance after data transformation and differencing:
+# Compare variance after data transformation and differencing:
 ```{r}
 ts_hosp %>%
   mutate(scaled_logit_hosp = scaled_logit(hosp_val),
