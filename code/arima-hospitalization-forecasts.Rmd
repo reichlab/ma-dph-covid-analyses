@@ -227,3 +227,61 @@ fit_lag_cases_test %>%
   )
 ```
 
+# Write function for forecasting hospitalizations given case data
+
+This function uses the input of case data (from either report data or test date) and outputs a forecast of hospitalizations. 
+
+This function works by first forecasting the number of cases based on the input data, and then using the forecasted cases to forecast hospitalizations. 
+
+This function takes the place of lines 106 through 156. 
+```{r}
+hosp_arima_forecast_function <- function(column_name, case_data_source) {
+  
+merge_all_ts$temp_col <- pull(merge_all_ts[column_name])
+
+model_cases_by_report <- merge_all_ts[c("target_end_date", "temp_col")] %>%
+  model(ARIMA(log(temp_col+1)))
+
+report(model_cases_by_report)
+
+new_case_by_report_data <- model_cases_by_report %>% 
+  forecast(h=28) 
+
+print(new_case_by_report_data %>%
+  autoplot(merge_all_ts[c("target_end_date", "temp_col")]) +
+  labs(y = paste("cases by",case_data_source, "date") , title = paste("ARIMA Forecast of cases by", case_data_source, "date")))
+
+all_cases_by_date <-  merge_all_ts[c("target_end_date", "temp_col")] %>%
+  bind_rows(select(tsibble(new_case_by_report_data), target_end_date, temp_col = `.mean`))
+
+hosps_and_case_by_date <- ts_hosp %>%
+  full_join(all_cases_by_date) %>%
+  mutate(case_lag5 = lag(temp_col, 5),
+         case_lag10 = lag(temp_col, 10),
+         case_lag15 = lag(temp_col, 15),
+         case_lag20 = lag(temp_col, 20)) %>%
+  ## filter comes last to make sure we have lags early in the filtered dataset
+  filter(target_end_date >= hosp_data_start_date)
+ 
+#need to figure out why this is LM with arima errors.  
+hosps_and_case_model <- hosps_and_case_by_date %>%
+  filter(target_end_date <= forecast_date) %>%
+  model(ARIMA(log(hosp_val+1) ~ case_lag5 + case_lag10 + case_lag15 + case_lag20))
+
+report(hosps_and_case_model)
+
+hosps_and_case_model %>% 
+  forecast(new_data = filter(hosps_and_case_by_date, target_end_date > forecast_date))  %>%
+  autoplot(hosps_and_case_by_date) +
+  labs(y = "Hospitalizations", title = paste("ARIMA Forecast of hospitalizations using cases by", case_data_source, "date"))
+}
+
+       
+hosp_arima_forecast_function(column_name = "report_case_val", case_data_source = "Report")
+hosp_arima_forecast_function(column_name = "test_case_val", case_data_source = "Test")
+```
+
+
+
+
+
