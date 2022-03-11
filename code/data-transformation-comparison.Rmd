@@ -49,7 +49,8 @@ ts_hosp <- hosp_truth %>%
 - lower bound = 0 and upper bound = population size in Massachusetts:
 ```{r}
 # define transformation and inverse of transformation
-MA_population <- 6892503
+#MA_population <- 6892503
+MA_population <- 600
 scaled_logit <- function(y, lower_bound = 0, upper_bound = MA_population){
   log((y-lower_bound)/(upper_bound-y))
 }
@@ -72,6 +73,15 @@ truncated_inv_sqrt <- function(x){
 }
 my_sqrt <- new_transformation(my_sqrt, truncated_inv_sqrt)
 ```
+# Define fourth-root transformation
+```{r}
+# define transformation and inverse of transformation
+fourth_rt<- function(x) {x^(1/4)}
+truncated_inv_fourth_rt <- function(x){
+  pmax(0,x)^4
+}
+fourth_rt_transformation <- new_transformation(fourth_rt, truncated_inv_fourth_rt)
+```
 
 # Compare variance after data transformation and differencing:
 ```{r}
@@ -88,6 +98,15 @@ ts_hosp %>%
   mutate(sqrt_hosp = my_sqrt(hosp_val),
          sqrt_hosp_diff = difference(sqrt_hosp, 7),
          sqrt_hosp_diff2 = difference(sqrt_hosp_diff, 1)) %>%
+  pivot_longer(-target_end_date) %>%
+  ggplot(aes(x=target_end_date, y=value)) +
+  geom_line() +
+  facet_grid(name~., scales="free_y")
+
+ts_hosp %>%
+  mutate(fourth_rt_hosp = fourth_rt_transformation(hosp_val),
+         fourth_rt_hosp_diff = difference(fourth_rt_hosp, 7),
+         fourth_rt_hosp_diff2 = difference(fourth_rt_hosp_diff, 1)) %>%
   pivot_longer(-target_end_date) %>%
   ggplot(aes(x=target_end_date, y=value)) +
   geom_line() +
@@ -114,7 +133,7 @@ compare_forecast <- function(forecast_date){
   sqrt_fit <- ts_hosp %>%
     filter(target_end_date >= hosp_data_start_date, 
            target_end_date < forecast_date) %>%
-    model(ARIMA(sqrt(hosp_val))) 
+    model(ARIMA(my_sqrt(hosp_val))) 
   
   report(sqrt_fit)
 
@@ -123,7 +142,20 @@ compare_forecast <- function(forecast_date){
       autoplot(ts_hosp) +
       labs(y = "Hospitalizations", title = paste("ARIMA Forecast Hospitalizations made with sqrt data prior to ", forecast_date))
   
-  gridExtra::grid.arrange(scaled_logit, sqrt, ncol = 1, nrow = 2)
+   #write model for ARIMA with only hospitalizations 
+  fourth_rt_fit <- ts_hosp %>%
+    filter(target_end_date >= hosp_data_start_date, 
+           target_end_date < forecast_date) %>%
+    model(ARIMA(fourth_rt_transformation(hosp_val))) 
+  
+  report(fourth_rt_fit)
+
+  fourth_rt <- fourth_rt_fit %>% 
+      forecast(h=28) %>%
+      autoplot(ts_hosp) +
+      labs(y = "Hospitalizations", title = paste("ARIMA Forecast Hospitalizations made with fourth root data prior to ", forecast_date))
+  
+  gridExtra::grid.arrange(scaled_logit, sqrt, fourth_rt, ncol = 1, nrow = 3)
 }
 ```
 
