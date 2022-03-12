@@ -276,52 +276,6 @@ This function uses the input of case data (from either report data or test date)
 This function works by first forecasting the number of cases based on the input data, and then using the forecasted cases to forecast hospitalizations. 
 
 This function takes the place of lines 106 through 156. 
-```{r}
-hosp_data_start_date <- as.Date("2020-08-01")
-case_data_start_date <- as.Date("2020-03-01")
-forecast_date <- as.Date("2021-06-01")
-data_issue_date <- as.Date("2022-02-02")
-
-hosp_truth <- load_truth(
-  truth_source = "HealthData",
-  target_variable = "inc hosp",
-  locations = "25") %>% 
-  filter(target_end_date <= forecast_date, target_end_date >= hosp_data_start_date)
-
-report_date_case_truth <- load_truth(
-  truth_source = "JHU",
-  target_variable = "inc case",
-  temporal_resolution = "daily",
-  locations = "25") %>% 
-  filter(target_end_date <= forecast_date, target_end_date >= case_data_start_date, value >= 0)
-
-test_date_case_truth <- read.csv("../csv-data/MA-DPH-csvdata-covid-2022-02-02.csv") %>%  #chose latest issue date from csv files
-  mutate(issue_date = data_issue_date) %>% 
-  mutate(Date = substr(Date, 1, 10)) %>% 
-  mutate(Date = as.Date(Date)) %>% 
-  filter(Date <= forecast_date, Date >= case_data_start_date)
-
-ts_report_date_case <- report_date_case_truth %>% 
-  select(target_end_date, report_case_val = value) %>%  #change variable names
-  as_tsibble() %>% 
-  tsibble::fill_gaps()
-
-ts_test_date_case <- test_date_case_truth %>% 
-  select(target_end_date = Date, test_case_val = Positive.New) %>% 
-  as_tsibble() %>% 
-  tsibble::fill_gaps() 
-
-ts_hosp <- hosp_truth %>%
-  as_tsibble() %>% 
-  select(target_end_date, hosp_val = value) %>% 
-  tsibble::fill_gaps()
-
-merge_all_ts <- ts_hosp %>%  #merge all datasets together
-  left_join(ts_report_date_case) %>%
-  left_join(ts_test_date_case) %>%
-  filter(target_end_date >= as.Date("2020-07-14"))
-```
-
 
 ```{r}
 hosp_arima_forecast_function <- function(case_data_source, forecast_date, case_data_start_date, data_issue_date) {
@@ -346,12 +300,13 @@ report_date_case_truth <- load_truth(
   locations = "25") %>% 
   filter(target_end_date <= forecast_date, target_end_date >= case_data_start_date, value >= 0) 
 
-ts_report_date_case <- report_date_case_truth %>% 
+ts_case <- report_date_case_truth %>% 
   select(target_end_date, report_case_val = value) %>%  #change variable names
   as_tsibble() %>% 
   tsibble::fill_gaps()
 
 for_merge <- ts_report_date_case
+
 }
 
 if(case_data_source == "Test") {
@@ -361,17 +316,16 @@ test_date_case_truth <- read.csv("../csv-data/MA-DPH-csvdata-covid-2022-02-02.cs
   mutate(Date = as.Date(Date)) %>% 
   filter(Date <= forecast_date, Date >= case_data_start_date)
 
-ts_test_date_case <- test_date_case_truth %>% 
+ts_case <- test_date_case_truth %>% 
   select(target_end_date = Date, test_case_val = Positive.New) %>% 
   as_tsibble() %>% 
   tsibble::fill_gaps() 
 
-for_merge <- ts_test_date_case
 }
   
-merge_all_ts <- ts_hosp %>% inner_join(for_merge) %>% 
+merge_all_ts <- ts_hosp %>% left_join(ts_case) %>%
   filter(target_end_date >= as.Date("2020-07-14"))
-
+  
   
 if(case_data_source == "Report") {
   merge_all_ts$temp_col <- merge_all_ts$report_case_val
@@ -382,7 +336,7 @@ if(case_data_source == "Report") {
 }
  
 
- model_cases_by_source <- merge_all_ts[c("target_end_date", "temp_col")] %>% 
+ model_cases_by_source <- merge_all_ts[c("target_end_date", "temp_col")] %>% as_tsibble() %>%
   model(ARIMA(log(temp_col+1)))
 
 report(model_cases_by_source)
@@ -420,7 +374,7 @@ hosps_and_case_model %>%
 }
 
        
-hosp_arima_forecast_function(case_data_source = "Test",
+hosp_arima_forecast_function(case_data_source = "Report",
                              hosp_data_start_date <- as.Date("2020-08-01"),
                              case_data_start_date <- as.Date("2020-03-01"),
                              forecast_date <- as.Date("2021-06-01"))
