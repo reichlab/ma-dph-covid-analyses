@@ -1,0 +1,175 @@
+---
+title: "Comparison of data transformation methods and forecasts with hospitalization data only"
+author: "Estee Y Cramer, Serena Wang, Evan Ray, Nick Reich"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Libraries
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(covidHubUtils)
+library(fpp3)
+library(fable)
+```
+
+# Set some global parameters for analysis
+
+```{r}
+hosp_data_start_date <- as.Date("2020-08-01")
+forecast_date <- as.Date("2021-06-01")
+```
+
+# Load and clean truth data 
+
+This code builds "truth" dataset for hospitalizations that goes up through the `forecast_date` specified above (`r forecast_date`)..
+
+```{r, message=FALSE, warning=FALSE}
+hosp_truth <- load_truth(
+  truth_source = "HealthData",
+  target_variable = "inc hosp",
+  locations = "25") %>% 
+  filter(target_end_date <= forecast_date, target_end_date >= hosp_data_start_date)
+```
+
+Turn the truth data above into `tsibbles` and standardize column names.
+
+```{r}
+ts_hosp <- hosp_truth %>%
+  as_tsibble() %>% 
+  select(target_end_date, hosp_val = value) %>% 
+  tsibble::fill_gaps()
+```
+
+# Define scaled logit
+- lower bound = 0 and upper bound = population size in Massachusetts:
+```{r}
+# define transformation and inverse of transformation
+#MA_population <- 6892503
+MA_population <- 600
+scaled_logit <- function(y, lower_bound = 0, upper_bound = MA_population){
+  log((y-lower_bound)/(upper_bound-y))
+}
+
+inv_scaled_logit <- function(y,lower_bound = 0, upper_bound = MA_population){
+  (upper_bound-lower_bound)*exp(y)/(1+exp(y)) + lower_bound
+}
+
+scaled_logit_transformation <- fabletools::new_transformation(scaled_logit, inv_scaled_logit)
+
+```
+
+# Define sqrt transformation
+- Note that when using the `sqrt()` transformation for the model below, an error was returned saying "x `upper` can't be lower than `lower`.", which perhaps was arising because of problems taking the square root with numbers between 0 and 1 and the sqrt transformation then making these values larger instead of smaller.
+```{r}
+# define transformation and inverse of transformation
+my_sqrt <- function(x) {sqrt(x)}
+truncated_inv_sqrt <- function(x){
+  pmax(0,x)^2
+}
+my_sqrt <- new_transformation(my_sqrt, truncated_inv_sqrt)
+```
+# Define fourth-root transformation
+```{r}
+# define transformation and inverse of transformation
+fourth_rt<- function(x) {x^(1/4)}
+truncated_inv_fourth_rt <- function(x){
+  pmax(0,x)^4
+}
+fourth_rt_transformation <- new_transformation(fourth_rt, truncated_inv_fourth_rt)
+```
+
+# Compare variance after data transformation and differencing:
+```{r}
+ts_hosp %>%
+  mutate(scaled_logit_hosp = scaled_logit(hosp_val),
+         scaled_logit_hosp_diff = difference(scaled_logit_hosp, 7),
+         scaled_logit_hosp_diff2 = difference(scaled_logit_hosp_diff, 1)) %>%
+  pivot_longer(-target_end_date) %>%
+  ggplot(aes(x=target_end_date, y=value)) +
+  geom_line() +
+  facet_grid(name~., scales="free_y")
+
+ts_hosp %>%
+  mutate(sqrt_hosp = my_sqrt(hosp_val),
+         sqrt_hosp_diff = difference(sqrt_hosp, 7),
+         sqrt_hosp_diff2 = difference(sqrt_hosp_diff, 1)) %>%
+  pivot_longer(-target_end_date) %>%
+  ggplot(aes(x=target_end_date, y=value)) +
+  geom_line() +
+  facet_grid(name~., scales="free_y")
+
+ts_hosp %>%
+  mutate(fourth_rt_hosp = fourth_rt_transformation(hosp_val),
+         fourth_rt_hosp_diff = difference(fourth_rt_hosp, 7),
+         fourth_rt_hosp_diff2 = difference(fourth_rt_hosp_diff, 1)) %>%
+  pivot_longer(-target_end_date) %>%
+  ggplot(aes(x=target_end_date, y=value)) +
+  geom_line() +
+  facet_grid(name~., scales="free_y")
+```
+
+# Compare ARIMA forecast with hosp data only at different stages 
+```{r}
+compare_forecast <- function(forecast_date){
+  #write model for ARIMA with only hospitalizations 
+  scaled_logit_fit <- ts_hosp %>%
+    filter(target_end_date >= hosp_data_start_date, 
+           target_end_date < forecast_date) %>%
+    model(ARIMA(scaled_logit_transformation(hosp_val))) 
+
+  report(scaled_logit_fit)
+  
+  scaled_logit <- scaled_logit_fit %>% 
+      forecast(h=28) %>%
+      autoplot(ts_hosp) +
+      labs(y = "Hospitalizations", title = paste("ARIMA Forecast Hospitalizations made with scaled logit data prior to ", forecast_date))
+  
+  #write model for ARIMA with only hospitalizations 
+  sqrt_fit <- ts_hosp %>%
+    filter(target_end_date >= hosp_data_start_date, 
+           target_end_date < forecast_date) %>%
+    model(ARIMA(my_sqrt(hosp_val))) 
+  
+  report(sqrt_fit)
+
+  sqrt <- sqrt_fit %>% 
+      forecast(h=28) %>%
+      autoplot(ts_hosp) +
+      labs(y = "Hospitalizations", title = paste("ARIMA Forecast Hospitalizations made with sqrt data prior to ", forecast_date))
+  
+   #write model for ARIMA with only hospitalizations 
+  fourth_rt_fit <- ts_hosp %>%
+    filter(target_end_date >= hosp_data_start_date, 
+           target_end_date < forecast_date) %>%
+    model(ARIMA(fourth_rt_transformation(hosp_val))) 
+  
+  report(fourth_rt_fit)
+
+  fourth_rt <- fourth_rt_fit %>% 
+      forecast(h=28) %>%
+      autoplot(ts_hosp) +
+      labs(y = "Hospitalizations", title = paste("ARIMA Forecast Hospitalizations made with fourth root data prior to ", forecast_date))
+  
+  gridExtra::grid.arrange(scaled_logit, sqrt, fourth_rt, ncol = 1, nrow = 3)
+}
+```
+
+## heading to the peak
+```{r}
+compare_forecast(forecast_date = "2020-11-20")
+```
+
+## going down from the peak
+```{r}
+compare_forecast(forecast_date = "2021-01-20")
+```
+
+## periods with low hosp value
+```{r}
+compare_forecast(forecast_date = "2021-05-10")
+```
