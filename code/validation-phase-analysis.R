@@ -84,5 +84,13 @@ for(forecast_date in validation_forecast_dates){
   
   ##  - fit all models
   
+  model1_solo <- arima_hosp_forecasts(hosp_data)
+
+  model2_reportcasefinal <- arima_hosp_forecasts(hosp_data, report_case_final)
+  
+  model3a_testcasefinal <- arima_hosp_forecasts(hosp_data, test_case_final)
+  
+  model3b_testcaserealtime <- arima_hosp_forecasts(hosp_data, test_case_realtime)
+    
 }
 
