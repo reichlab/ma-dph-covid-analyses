@@ -1,6 +1,7 @@
 ## reformatting Excel data
 
 library(tidyverse)
+library(lubridate)
 
 ## convert files to csv
 files_to_convert <- list.files(path = "raw-data/", pattern="*.xlsx", full.names = TRUE)
@@ -16,7 +17,7 @@ for(i in 1:length(files_to_convert)){
   this_issue_date <- as.Date(substr(files_to_convert[i], start = 32, stop=41))
   message(paste("converting", this_issue_date))
   tmp <- readxl::read_excel(files_to_convert[i], sheet = "CasesByDate (Test Date)") %>%
-    transmute(test_date = Date,
+    transmute(test_date = ymd(Date),
               total_positive = `Positive Total`,
               new_positive = `Positive New`,
               confirmed_case_7d_avg = `7-day confirmed case average`) %>%
