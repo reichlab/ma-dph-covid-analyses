@@ -36,8 +36,10 @@ So that we can focus on understanding the importance of the different variations
 
 1. **Solo**: A reference model that forecasts hospitalizations using only the
 past reported values of hospitalizations as an input.
-2. **ReportCaseRealTime**: In addition to past hospitalizations, this model uses report
-date cases as an input to forecasting hospitalizations.
+2. **ReportCaseFinal**: In addition to past hospitalizations, this model uses report
+date cases (finalized, not as they were available at a particular date) as an input to forecasting hospitalizations. [Note that for the moment we are making an explicit choice to 
+leave out **ReportCaseRealTime** as a model option as this comparison is not 
+critical to the questions we are trying to answer.]
 3. We consider three variations on models using test date cases as an input to
 forecasting hospitalizations, with different strategies for handling the
 backfill process:
@@ -58,8 +60,8 @@ forecast skill of these models:
 
  * Are report date cases helpful for forecasting hosps? Compare models 1 and 2
  * In an ideal setting without reporting delay, is the more-epidemiologically-relevant signal of test date cases helpful for forecasting hosps? Compare models 1 and 3a, and/or models 2 and 3a.
- * In the real-world setting with reporting delay, is directly using as-of reported cases helpful for forecasting hosps? Compare models 1 and 3b, and/or 3a and 3b
- * In the real-world setting with reporting delay, is using as-of reported cases adjusted for that reporting delay helpful for forecasting hosps? Compare models 1 and 3c, and/or 3a and 3c, and/or 3b and 3c
+ * In the real-world setting with reporting delay, is directly using as-of cases by test date helpful for forecasting hosps? Compare models 1 and 3b, and/or 3a and 3b
+ * In the real-world setting with reporting delay, is using as-of cases by test date adjusted for that reporting delay helpful for forecasting hosps? Compare models 1 and 3c, and/or 3a and 3c, and/or 3b and 3c
 
 Other thoughts
 
