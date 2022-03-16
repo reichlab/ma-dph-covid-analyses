@@ -66,31 +66,40 @@ test_case_final <- read_csv("csv-data/MA-DPH-covid-alldata.csv") %>%
   tsibble::fill_gaps() 
 
 
-## loop through forecast dates
-
-## for a forecastMonday
-for(forecast_date in validation_forecast_dates){
+# set up variations on sarima specifications to consider in validation phase
+sarima_variations <- expand.grid(p=0:3, d=0:1, P=0:3, D=0:1)
+for (i in seq_len(nrow(sarima_variations))) {
+  p <- sarima_variations$p[i]
+  d <- sarima_variations$d[i]
+  P <- sarima_variations$P[i]
+  D <- sarima_variations$D[i]
   
-  ##  - extract as-of data for TestCases 
-  test_case_realtime <- read_csv("csv-data/MA-DPH-covid-alldata.csv") %>%  #chose latest issue date from csv files
-    filter(issue_date == forecast_date) %>% 
-    mutate(target_end_date = ymd(substr(Date, 1, 10))) %>% 
-    filter(
-      target_end_date <= forecast_date, 
-      target_end_date >= case_data_start_date) %>% 
-    select(target_end_date, test_case_realtime = Positive.New) %>% 
-    as_tsibble(index = target_end_date) %>% 
-    tsibble::fill_gaps() 
-  
-  ##  - fit all models
-  
-  model1_solo <- arima_hosp_forecasts(hosp_data)
-
-  model2_reportcasefinal <- arima_hosp_forecasts(hosp_data, report_case_final)
-  
-  model3a_testcasefinal <- arima_hosp_forecasts(hosp_data, test_case_final)
-  
-  model3b_testcaserealtime <- arima_hosp_forecasts(hosp_data, test_case_realtime)
+  ## loop through forecast dates
+  for(forecast_date in validation_forecast_dates){
     
+    ##  extract as-of data for TestCases 
+    test_case_realtime <- read_csv("csv-data/MA-DPH-covid-alldata.csv") %>%  #chose latest issue date from csv files
+      filter(issue_date == forecast_date) %>% 
+      mutate(target_end_date = ymd(substr(Date, 1, 10))) %>% 
+      filter(
+        target_end_date <= forecast_date, 
+        target_end_date >= case_data_start_date) %>% 
+      select(target_end_date, test_case_realtime = Positive.New) %>% 
+      as_tsibble(index = target_end_date) %>% 
+      tsibble::fill_gaps() 
+    
+    ## fit all models
+    model1_solo <- arima_hosp_forecasts(hosp_data, p=p, d=d, P=P, D=D)
+    # save model1_solo results
+    
+    model2_reportcasefinal <- arima_hosp_forecasts(hosp_data, report_case_final, p=p, d=d, P=P, D=D)
+    # save model2_reportcasefinal results
+    
+    model3a_testcasefinal <- arima_hosp_forecasts(hosp_data, test_case_final, p=p, d=d, P=P, D=D)
+    # save model3a_testcasefinal results
+    
+    model3b_testcaserealtime <- arima_hosp_forecasts(hosp_data, test_case_realtime, p=p, d=d, P=P, D=D)
+    # save model3b_testcaserealtime results
+    
+  }
 }
-
