@@ -55,7 +55,7 @@ report_case_final <- load_truth(
     target_end_date >= data_start_date, 
     ## note: filtering out values with <0 reported case values
     value >= 0) %>% 
-  select(target_end_date, report_cases = value) %>%  #change variable names
+  select(target_end_date, report_case_final = value) %>%  #change variable names
   as_tsibble(index = target_end_date) %>% 
   tsibble::fill_gaps()
 
