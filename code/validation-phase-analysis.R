@@ -6,11 +6,10 @@ library(tidyverse)
 library(lubridate)
 library(fable)
 library(covidHubUtils)
+library(covidData)
 
 # TODO: 
-# - update data_issue_date after downloading more recent data, thru Omicron wave
 # - download Monday versions of data from Oct 2020 - Dec 2020 and add to main test data csv file, change first_forecast_date
-# - add dependency of covidData so we can load_truth(as_of=...)
 # - fill in missing datapoints?
 
 ## define global parameters
@@ -68,25 +67,25 @@ test_case_final <- read_csv("csv-data/MA-DPH-covid-alldata.csv") %>%
 
 # set up variations on sarima specifications to consider in validation phase
 sarima_variations <- expand.grid(p=0:3, d=0:1, P=0:3, D=0:1)
-for (i in seq_len(nrow(sarima_variations))) {
-  p <- sarima_variations$p[i]
-  d <- sarima_variations$d[i]
-  P <- sarima_variations$P[i]
-  D <- sarima_variations$D[i]
+## loop through forecast dates
+for(forecast_date in validation_forecast_dates){
   
-  ## loop through forecast dates
-  for(forecast_date in validation_forecast_dates){
-    
-    ##  extract as-of data for TestCases 
-    test_case_realtime <- read_csv("csv-data/MA-DPH-covid-alldata.csv") %>%  #chose latest issue date from csv files
-      filter(issue_date == forecast_date) %>% 
-      mutate(target_end_date = ymd(substr(Date, 1, 10))) %>% 
-      filter(
-        target_end_date <= forecast_date, 
-        target_end_date >= case_data_start_date) %>% 
-      select(target_end_date, test_case_realtime = Positive.New) %>% 
-      as_tsibble(index = target_end_date) %>% 
-      tsibble::fill_gaps() 
+  ##  extract as-of data for TestCases 
+  test_case_realtime <- read_csv("csv-data/MA-DPH-covid-alldata.csv") %>%  #chose latest issue date from csv files
+    filter(issue_date == forecast_date) %>% 
+    mutate(target_end_date = ymd(substr(Date, 1, 10))) %>% 
+    filter(
+      target_end_date <= forecast_date, 
+      target_end_date >= case_data_start_date) %>% 
+    select(target_end_date, test_case_realtime = Positive.New) %>% 
+    as_tsibble(index = target_end_date) %>% 
+    tsibble::fill_gaps() 
+  
+  for (i in seq_len(nrow(sarima_variations))) {
+    p <- sarima_variations$p[i]
+    d <- sarima_variations$d[i]
+    P <- sarima_variations$P[i]
+    D <- sarima_variations$D[i]
     
     ## fit all models
     model1_solo <- arima_hosp_forecasts(hosp_data, p=p, d=d, P=P, D=D)
