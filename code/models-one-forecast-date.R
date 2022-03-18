@@ -3,6 +3,7 @@ library(lubridate)
 library(fable)
 library(covidHubUtils)
 library(covidData)
+library(GGally)
 
 source("code/hosp_arima_forecast_function.R")
 
@@ -107,3 +108,64 @@ my_models %>% glance()
 arima_tcf <- arima_hosp_forecasts(all_data, case_col="test_case_final", case_p = 2, p=2, d=0, P=1, D=0)
 
 
+
+## Evan's explorations
+ggplot(data = all_data, mapping = aes(x = target_end_date, y = test_case_final)) +
+  geom_line()
+
+ggplot(data = all_data, mapping = aes(x = target_end_date, y = hosps)) +
+  geom_line()
+
+augmented_data <- all_data %>%
+  mutate(test_case_final_smoothed = fourth_rt(test_case_final_smoothed),
+         test_case_final = fourth_rt(test_case_final),
+         report_case_final = fourth_rt(report_case_final)
+         ) %>%
+  add_lags("hosps", p=7, P=1) %>%
+  add_lags("test_case_final_smoothed", p=7, P=1) %>%
+  add_lags("test_case_final", p=7, P=1) %>%
+  add_lags("report_case_final", p=7, P=1)
+
+null_fit <- augmented_data %>%
+  model(tslm_SAR11 = TSLM(fourth_rt_transformation(hosps) ~ fourth_rt(hosps_lag1) + fourth_rt(hosps_lag7) + fourth_rt(hosps_lag8)))
+
+augmented_data$null_resid <- residuals(null_fit)[[".resid"]]
+
+# look at relationship of residuals with lagged case values
+ggpairs(
+  augmented_data %>%
+    dplyr::transmute(
+      test_case_final_lag1, test_case_final_lag7, test_case_final_lag8,
+      case_seasonal_diff = test_case_final_lag8 - test_case_final_lag1,
+      null_resid)
+)
+
+# look at relationship of residuals with lagged smoothed case values
+ggpairs(
+  augmented_data %>%
+    dplyr::transmute(
+      test_case_final_lag1, test_case_final_smoothed_lag7, test_case_final_smoothed_lag8,
+      case_seasonal_diff = test_case_final_smoothed_lag8 - test_case_final_smoothed_lag1,
+      null_resid)
+)
+
+# preliminary plain-vanilla lm fits of resids ~ case_seasonal_diff
+lm(null_resid ~ case_seasonal_diff,
+  data = augmented_data %>%
+    dplyr::mutate(
+      case_seasonal_diff = test_case_final_lag8 - test_case_final_lag1))
+
+lm(null_resid ~ case_seasonal_diff,
+  data = augmented_data %>%
+    dplyr::mutate(
+      case_seasonal_diff = test_case_final_smoothed_lag8 - test_case_final_smoothed_lag1))
+
+# using smoothed cases looks more promising from both plots and preliminary fits
+# note that hosps were not transformed already, but cases were; hence, different treatment below
+cases_fit <- augmented_data %>%
+  model(tslm_SAR11 = TSLM(fourth_rt_transformation(hosps) ~ fourth_rt(hosps_lag1) + fourth_rt(hosps_lag7) + fourth_rt(hosps_lag8) +
+                                                            test_case_final_smoothed_lag1 + test_case_final_smoothed_lag7 + test_case_final_smoothed_lag8))
+
+# look at summary of null fit and cases fit
+report(null_fit)
+report(cases_fit)
