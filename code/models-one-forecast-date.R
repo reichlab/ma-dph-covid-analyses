@@ -163,9 +163,18 @@ lm(null_resid ~ case_seasonal_diff,
 # using smoothed cases looks more promising from both plots and preliminary fits
 # note that hosps were not transformed already, but cases were; hence, different treatment below
 cases_fit <- augmented_data %>%
-  model(tslm_SAR11 = TSLM(fourth_rt_transformation(hosps) ~ fourth_rt(hosps_lag1) + fourth_rt(hosps_lag7) + fourth_rt(hosps_lag8) +
+  model(tslm_SARX11 = TSLM(fourth_rt_transformation(hosps) ~ fourth_rt(hosps_lag1) + fourth_rt(hosps_lag7) + fourth_rt(hosps_lag8) +
                                                             test_case_final_smoothed_lag1 + test_case_final_smoothed_lag7 + test_case_final_smoothed_lag8))
 
 # look at summary of null fit and cases fit
 report(null_fit)
 report(cases_fit)
+
+# add these two to Nick's big list of models above
+full_models <- dplyr::bind_cols(
+  my_models,
+  null_fit,
+  cases_fit
+)
+
+glance(full_models)
