@@ -9,6 +9,7 @@ fourth_rt_transformation <- fabletools::new_transformation(fourth_rt, truncated_
 #'
 #' @param data tsibble with index target_end_date, variable hosps, and optional cases column
 #' @param case_col name of column with case data to use in model
+#' @param case_p integer representing the number of lags to include for cases
 #' @param p ARIMA lag parameter
 #' @param P seasonal ARIMA lag parameter
 #' @param d ARIMA difference parameter
@@ -16,7 +17,7 @@ fourth_rt_transformation <- fabletools::new_transformation(fourth_rt, truncated_
 #'
 #' @return a list with three components: `forecasts`, `case_model`, and `hosp_model`
 #'
-arima_hosp_forecasts <- function(data, case_col, p=0, P=0, d=0, D=0) {
+arima_hosp_forecasts <- function(data, case_col, case_p, p=0, P=0, d=0, D=0) {
   require(tidyverse)
   require(fable)
   
@@ -26,7 +27,6 @@ arima_hosp_forecasts <- function(data, case_col, p=0, P=0, d=0, D=0) {
   if(!(case_col %in% colnames(data))) {
     stop("case_col argument must match a column name in data.")
   } else{
-    case_p <- 4
     case_P <- 0
   }
   
@@ -61,8 +61,9 @@ arima_hosp_forecasts <- function(data, case_col, p=0, P=0, d=0, D=0) {
     ## build formula for hosp model
     response_var <- "fourth_rt_transformation(hosps)"
     ## add simple lags
-    formula <- paste0(response_var, " ~ 1 + pdq(p=p, d=d, q=0) + PDQ(P=P, D=D, Q=0) +", 
-                      paste0("cases_lag", seq_len(case_p), collapse = " + "))
+    fmla <- paste0(response_var, " ~ 1 + pdq(p=p, d=d, q=0) + PDQ(P=P, D=D, Q=0)")
+    if(case_p > 0)
+      fmla <- paste(fmla, paste0("+ cases_lag", seq_len(case_p), collapse = " "))
     ## add seasonal terms if P>0
     seasonal_terms <- ""
     for (seasonal_lag in seq_len(case_P)) {
@@ -71,10 +72,10 @@ arima_hosp_forecasts <- function(data, case_col, p=0, P=0, d=0, D=0) {
         seasonal_terms, " + ",
         paste0("cases_lag", seq(from=0, to=case_p) + seasonal_lag * 7, collapse = " + "))
     }
-    formula <- as.formula(paste0(formula, seasonal_terms))
+    fmla <- formula(paste(fmla, seasonal_terms, collapse = " "))
     hosps_model <- data %>%
       add_lags(col_name = "cases", p=case_p, P=case_P) %>%
-      model(ARIMA(formula))
+      model(ARIMA(fmla))
   } 
   
   ## forecast from hosps model
@@ -85,7 +86,8 @@ arima_hosp_forecasts <- function(data, case_col, p=0, P=0, d=0, D=0) {
   return(list(data = data,
               forecasts = hosp_forecast_df, 
               cases_model = cases_model, 
-              hosps_model = hosps_model))
+              hosps_model = hosps_model,
+              new_data_cases = new_data_cases))
 }
 
 

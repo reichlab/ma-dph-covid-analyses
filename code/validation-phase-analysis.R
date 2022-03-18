@@ -8,6 +8,10 @@ library(fable)
 library(covidHubUtils)
 library(covidData)
 
+
+source("code/hosp_arima_forecast_function.R")
+
+
 # TODO: 
 # - download Monday versions of data from Oct 2020 - Dec 2020 and add to main test data csv file, change first_forecast_date
 # - fill in missing datapoints?
@@ -68,7 +72,7 @@ test_case_final <- read_csv("csv-data/MA-DPH-covid-alldata.csv") %>%
     target_end_date <= last_forecast_date, 
     target_end_date >= data_start_date) %>% 
   select(target_end_date, test_case_final = new_positive, issue_date) %>% 
-  mutate(test_case_final_smoothed = slider::slide_dbl(test_case_final, mean, .before = 6, .after=0, .complete=FALSE))
+  mutate(test_case_final_smoothed = slider::slide_dbl(test_case_final, mean, .before = 6, .after=0, .complete=FALSE)) %>%
   as_tsibble(index = target_end_date) %>% 
   tsibble::fill_gaps() 
 
@@ -105,18 +109,13 @@ for(forecast_date in validation_forecast_dates){
     model1_solo <- arima_hosp_forecasts(all_data, p=p, d=d, P=P, D=D)
     # save model1_solo results
     
-    model2_reportcasefinal <- arima_hosp_forecasts(all_data, case_col="report_case_final", p=p, d=d, P=P, D=D)
+    model2_reportcasefinal <- arima_hosp_forecasts(all_data, case_col="report_case_final", case_p = 2, p=p, d=d, P=P, D=D)
     # save model2_reportcasefinal results
     
-    model3a_testcasefinal <- arima_hosp_forecasts(all_data, case_col="test_case_final", p=p, d=d, P=P, D=D)
+    model3a_testcasefinal <- arima_hosp_forecasts(all_data, case_col="test_case_final", case_p = 2, p=p, d=d, P=P, D=D)
     # save model3a_testcasefinal results
-
-
-    model3a_testcasefinal_p2 <- arima_hosp_forecasts(all_data, case_col="test_case_final", p=2, d=0, P=0, D=0)
-    model3a_testcasefinal_p0 <- arima_hosp_forecasts(all_data, case_col="test_case_final", p=0, d=0, P=0, D=0)
-    
         
-    model3b_testcaserealtime <- arima_hosp_forecasts(all_data, case_col="test_case_realtime", p=p, d=d, P=P, D=D)
+    model3b_testcaserealtime <- arima_hosp_forecasts(all_data, case_col="test_case_realtime", case_p = 2, p=p, d=d, P=P, D=D)
     # save model3b_testcaserealtime results
     
   }
