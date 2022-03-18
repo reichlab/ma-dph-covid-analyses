@@ -1,0 +1,109 @@
+library(tidyverse)
+library(lubridate)
+library(fable)
+library(covidHubUtils)
+library(covidData)
+
+source("code/hosp_arima_forecast_function.R")
+
+data_start_date <- ymd("2020-07-24")
+
+## roughly start of winter wave in MA, also give us a few weeks of data to fit the model on early
+forecast_date <- ymd("2021-05-03") 
+data_analysis_date <- as.Date("2022-03-14") ## could update with newer data
+
+
+## load hosp truth data
+hosp_final <- load_truth(
+  truth_source = "HealthData",
+  target_variable = "inc hosp",
+  locations = "25",
+  data_location = "covidData",
+  as_of = data_analysis_date) %>% 
+  filter(
+    ## only need data until last forecast date
+    target_end_date <= forecast_date,
+    ## data should start ~1wk prior to the first date, to allow for weekly differencing
+    target_end_date >= data_start_date) %>%
+  select(target_end_date, hosps = value) %>% 
+  as_tsibble(index = target_end_date) %>% 
+  tsibble::fill_gaps()
+
+## load ReportCaseFinal data
+report_case_final <- load_truth(
+  truth_source = "JHU",
+  target_variable = "inc case",
+  temporal_resolution = "daily",
+  locations = "25",
+  data_location = "covidData",
+  as_of = data_analysis_date) %>% 
+  filter(
+    target_end_date <= forecast_date, 
+    target_end_date >= data_start_date, 
+    ## note: filtering out values with <0 reported case values
+    value >= 0) %>% 
+  select(target_end_date, report_case_final = value) %>%  #change variable names
+  as_tsibble(index = target_end_date) %>% 
+  tsibble::fill_gaps()
+
+
+## load TestCaseFinal data
+test_case_final <- read_csv("csv-data/MA-DPH-covid-alldata.csv") %>%
+  filter(issue_date == data_analysis_date) %>%
+  mutate(target_end_date = test_date) %>% 
+  filter(
+    target_end_date <= forecast_date, 
+    target_end_date >= data_start_date) %>% 
+  select(target_end_date, test_case_final = new_positive, issue_date) %>% 
+  mutate(test_case_final_smoothed = slider::slide_dbl(test_case_final, mean, .before = 6, .after=0, .complete=FALSE)) %>%
+  as_tsibble(index = target_end_date) %>% 
+  tsibble::fill_gaps() 
+
+
+test_case_realtime <- read_csv("csv-data/MA-DPH-covid-alldata.csv") %>% 
+  rename(target_end_date = test_date) %>%
+  filter(issue_date == forecast_date,
+         target_end_date <= forecast_date, 
+         target_end_date >= data_start_date) %>% 
+  select(target_end_date, test_case_realtime = new_positive) %>% 
+  as_tsibble(index = target_end_date) %>% 
+  tsibble::fill_gaps() 
+
+all_data <- hosp_final %>%
+  left_join(report_case_final) %>%
+  left_join(test_case_final) %>%
+  left_join(test_case_realtime) %>%
+  mutate(test_case_final_diff = test_case_final - lag(test_case_final, 7)) %>%
+  filter(target_end_date < forecast_date) %>%
+  select(-issue_date)
+
+## a suite of models
+my_models <- all_data %>%
+  ## it seemed better to transform the predictors as well
+  mutate(test_case_final_smoothed = fourth_rt(test_case_final_smoothed),
+         test_case_final = fourth_rt(test_case_final),
+         report_case_final = fourth_rt(report_case_final)
+         ) %>%
+  add_lags("hosps", p=7, P=0) %>%
+  add_lags("test_case_final_smoothed", p=7, P=0) %>%
+  add_lags("test_case_final", p=7, P=0) %>%
+  add_lags("report_case_final", p=7, P=0) %>%
+  model(arima_.25 = ARIMA(fourth_rt_transformation(hosps) ~ pdq()),
+        sarima_.25 = ARIMA(fourth_rt_transformation(hosps) ~ pdq() + PDQ()),
+        hosp_lag1 = TSLM(fourth_rt_transformation(hosps) ~ hosps_lag1),
+        hosp_lagx = TSLM(fourth_rt_transformation(hosps) ~ hosps_lag1 + hosps_lag2 + hosps_lag3 + hosps_lag4 + hosps_lag5 + hosps_lag6 + hosps_lag7),
+        tcfs_lag1 = TSLM(fourth_rt_transformation(hosps) ~ test_case_final_smoothed_lag1),
+        tcfs_lagx = TSLM(fourth_rt_transformation(hosps) ~ test_case_final_smoothed_lag1 + test_case_final_smoothed_lag2 + test_case_final_smoothed_lag3 + test_case_final_smoothed_lag4 + test_case_final_smoothed_lag5 + test_case_final_smoothed_lag6 + test_case_final_smoothed_lag7),
+        tcf_lag1 = TSLM(fourth_rt_transformation(hosps) ~ test_case_final_lag1),
+        tcf_lagx = TSLM(fourth_rt_transformation(hosps) ~ test_case_final_lag1 + test_case_final_lag2 + test_case_final_lag3 + test_case_final_lag4 + test_case_final_lag5 + test_case_final_lag6 + test_case_final_lag7),
+        rcf_lag1 = TSLM(fourth_rt_transformation(hosps) ~ report_case_final_lag1),
+        rcf_lagx = TSLM(fourth_rt_transformation(hosps) ~ report_case_final_lag1 + report_case_final_lag2 + report_case_final_lag3 + report_case_final_lag4 + report_case_final_lag5 + report_case_final_lag6 + report_case_final_lag7),
+        nn_lagx = NNETAR(fourth_rt_transformation(hosps) ~ test_case_final_smoothed_lag1 + test_case_final_smoothed_lag2 + test_case_final_smoothed_lag3 + test_case_final_smoothed_lag4 + test_case_final_smoothed_lag5 + test_case_final_smoothed_lag6 + test_case_final_smoothed_lag7))
+
+my_models %>% glance()
+
+
+## an example single arima fit
+arima_tcf <- arima_hosp_forecasts(all_data, case_col="test_case_final", case_p = 2, p=2, d=0, P=1, D=0)
+
+
