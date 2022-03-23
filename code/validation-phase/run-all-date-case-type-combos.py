@@ -72,7 +72,7 @@ if __name__ == "__main__":
 
     # run in parallel on local computer or submit cluster jobs
     if args.run_setting == 'local':
-      with Pool(processes=16) as pool:
+      with Pool(processes=27) as pool:
         pool.map(run_command, commands)
     elif args.run_setting == 'cluster':
       # remove old sh scripts

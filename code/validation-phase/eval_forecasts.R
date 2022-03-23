@@ -10,8 +10,10 @@ models <- list.dirs(
   recursive = FALSE)
 
 forecasts <- load_forecasts(
+#  models = "report_final_VAR",
   # models = models,
   # dates = "2021-03-08",
+  # dates = '2020-12-07',
   date_window_size = 6,
   locations = c("25"),
   types = c("point", "quantile"),
@@ -42,16 +44,17 @@ combined_forecasts <- dplyr::bind_rows(forecasts, hub_forecasts)
 
 combined_forecasts %>%
   dplyr::filter(type == "quantile") %>%
-  dplyr::count(model)
+  dplyr::count(model) %>%
+  as.data.frame()
 
 # forecasts <- covidHubUtils::align_forecasts(forecasts)
 
-extract_variation <- function(model_name, var_name) {
-  ind <- regexpr(var_name, model_name) + nchar(var_name) + 1
-  model_substr <- substr(model_name, ind, nchar(model_name))
-  ind <- regexpr("_", model_substr)
-  substr(model_substr, 1, ifelse(ind == -1, nchar(model_substr), ind - 1))
-}
+# extract_variation <- function(model_name, var_name) {
+#   ind <- regexpr(var_name, model_name) + nchar(var_name) + 1
+#   model_substr <- substr(model_name, ind, nchar(model_name))
+#   ind <- regexpr("_", model_substr)
+#   substr(model_substr, 1, ifelse(ind == -1, nchar(model_substr), ind - 1))
+# }
 
 truth_data <- load_truth(
   truth_source = "HealthData",
@@ -68,15 +71,22 @@ scores <- covidHubUtils::score_forecasts(
   truth_data %>% filter(target_end_date <= "2021-06-12"),
   use_median_as_point = TRUE)
 
-scores %>% group_by(model) %>%
-  summarize(wis = mean(wis)) %>%
-  arrange(wis)
+mean_scores <- scores %>% group_by(model) %>%
+  summarize(wis = mean(wis), coverage_95 = mean(coverage_95)) %>%
+  arrange(wis) %>%
+  as.data.frame()
+mean_scores
 
 # plot the forecasts
+models_to_plot <- mean_scores %>%
+  filter(wis < 45) %>%
+  pull(model)
+
 forecasts_to_plot <- covidHubUtils::get_plot_forecast_data(
   forecast_data = combined_forecasts,
   truth_data = truth_data,
-  models_to_plot = unique(combined_forecasts$model),
+  # models_to_plot = unique(combined_forecasts$model),
+  models_to_plot = models_to_plot,
   horizons_to_plot = 28,
   quantiles_to_plot = c(0.025, 0.5, 0.975),
   # quantiles_to_plot = c(0.025, 0.25, 0.5, 0.75, 0.975),
@@ -113,11 +123,11 @@ p <- ggplot() +
     color = "blue"
   ) +
   geom_line(
-    data = truth_data %>% dplyr::select(-model),
+    data = truth_data %>% dplyr::select(-model) %>% dplyr::filter(target_end_date < "2021-07-01"),
     mapping = aes(x = target_end_date, y = value)
   ) +
   facet_wrap( ~ model, scales = "free_y", ncol = 2)
-
+p
 
 # covidHubUtils::plot_forecasts(
 #     forecast_data = stl_forecasts,
