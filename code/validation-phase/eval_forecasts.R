@@ -39,7 +39,7 @@ hub_forecasts <- load_forecasts(
   as_of = NULL,
   hub = c("US")
 )
-
+# combined_forecasts <- forecasts
 combined_forecasts <- dplyr::bind_rows(forecasts, hub_forecasts)
 
 combined_forecasts %>%
@@ -79,7 +79,7 @@ mean_scores
 
 # plot the forecasts
 models_to_plot <- mean_scores %>%
-  filter(wis < 45) %>%
+  filter(wis < 28) %>%
   pull(model)
 
 forecasts_to_plot <- covidHubUtils::get_plot_forecast_data(
@@ -97,21 +97,21 @@ forecasts_to_plot <- forecasts_to_plot %>%
   dplyr::filter(!grepl("Observed Data", model))
 
 p <- ggplot() +
-  geom_ribbon(
-    data = forecasts_to_plot %>%
-      dplyr::filter(!is.na(`Prediction Interval`)),
-    mapping = aes(
-      x = target_end_date,
-      ymin = lower,
-      ymax = upper,
-      alpha = `Prediction Interval`,
-      group = paste0(model, forecast_date)
-    ),
-    fill = "cornflowerblue"
-  ) +
-  scale_alpha_manual(
-    values = c("95%" = 0.5)
-  ) +
+  # geom_ribbon(
+  #   data = forecasts_to_plot %>%
+  #     dplyr::filter(!is.na(`Prediction Interval`)),
+  #   mapping = aes(
+  #     x = target_end_date,
+  #     ymin = lower,
+  #     ymax = upper,
+  #     alpha = `Prediction Interval`,
+  #     group = paste0(model, forecast_date)
+  #   ),
+  #   fill = "cornflowerblue"
+  # ) +
+  # scale_alpha_manual(
+  #   values = c("95%" = 0.5)
+  # ) +
   geom_line(
     data = forecasts_to_plot %>%
       dplyr::filter(is.na(`Prediction Interval`)),
@@ -126,8 +126,63 @@ p <- ggplot() +
     data = truth_data %>% dplyr::select(-model) %>% dplyr::filter(target_end_date < "2021-07-01"),
     mapping = aes(x = target_end_date, y = value)
   ) +
+  ylim(0, 500) +
   facet_wrap( ~ model, scales = "free_y", ncol = 2)
 p
+
+
+models_to_plot <- mean_scores %>%
+  filter(wis < 27) %>%
+  pull(model)
+
+forecasts_to_plot <- covidHubUtils::get_plot_forecast_data(
+  forecast_data = combined_forecasts,
+  truth_data = truth_data,
+  # models_to_plot = unique(combined_forecasts$model),
+  models_to_plot = models_to_plot,
+  horizons_to_plot = 28,
+  quantiles_to_plot = c(0.025, 0.5, 0.975),
+  # quantiles_to_plot = c(0.025, 0.25, 0.5, 0.75, 0.975),
+  target_variable_to_plot = "inc hosp",
+  hub = "US")
+
+forecasts_to_plot <- forecasts_to_plot %>%
+  dplyr::filter(!grepl("Observed Data", model))
+
+p <- ggplot() +
+  # geom_ribbon(
+  #   data = forecasts_to_plot %>%
+  #     dplyr::filter(!is.na(`Prediction Interval`)),
+  #   mapping = aes(
+  #     x = target_end_date,
+  #     ymin = lower,
+  #     ymax = upper,
+  #     alpha = `Prediction Interval`,
+  #     group = paste0(model, forecast_date)
+  #   ),
+  #   fill = "cornflowerblue"
+  # ) +
+  # scale_alpha_manual(
+  #   values = c("95%" = 0.5)
+  # ) +
+  geom_line(
+    data = forecasts_to_plot %>%
+      dplyr::filter(is.na(`Prediction Interval`)),
+    mapping = aes(
+      x = target_end_date,
+      y = point,
+      color = model,
+      group = paste0(model, forecast_date)
+    ),
+  ) +
+  geom_line(
+    data = truth_data %>% dplyr::select(-model) %>% dplyr::filter(target_end_date < "2021-07-01"),
+    mapping = aes(x = target_end_date, y = value)
+  ) +
+  # ylim(0, 500) +
+  facet_wrap( ~ forecast_date, scales = "free_y")
+p
+
 
 # covidHubUtils::plot_forecasts(
 #     forecast_data = stl_forecasts,

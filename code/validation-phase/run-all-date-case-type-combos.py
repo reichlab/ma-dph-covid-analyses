@@ -55,10 +55,12 @@ if __name__ == "__main__":
     # all combinations of forecast date and case type
     variations = expand_grid({
       'forecast_date': forecast_dates,
-      'case_type': ['report'],
-      'case_timing': ['final']
-      # 'case_type': ['report', 'test'],
+      # 'case_type': ['report'],
+      # 'case_type': ['test'],
+      'case_timing': ['final'],
+      'case_type': ['report', 'test'],
       # 'case_timing': ['final', 'realtime']
+      'model_group': ['VAR']
     })
 
     # list of python commands for each variation

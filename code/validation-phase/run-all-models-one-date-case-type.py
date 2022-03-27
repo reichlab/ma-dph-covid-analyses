@@ -73,7 +73,21 @@ def load_data(as_of = None, end_day = "2021-07-01", case_type = 'report', case_t
         case_df['case'].iloc[zero_inds] = np.nan
         case_df.interpolate(inplace=True)
     else:
-        raise ValueError("case_type other than 'report' not supported yet")
+        csv_files = os.listdir('csv-data')
+        as_ofs = [f[21:-4] for f in csv_files]
+        if case_timing == 'final':
+            case_as_of = max(as_ofs)
+        else:
+            subset_as_ofs = [ao for ao in as_ofs if ao <= as_of]
+            case_as_of = max(subset_as_ofs)
+        
+        case_df = pd.read_csv('csv-data/MA-DPH-csvdata-covid-' + case_as_of + '.csv')
+        case_df['location'] = 'ma'
+        case_df = case_df[['location', 'test_date', 'new_positive']]
+        case_df.columns = ['location', 'date', 'case']
+        
+        case_df = case_df[(case_df.date >= '2020-10-01') & (case_df.date <= end_day)]
+        case_df.date = pd.to_datetime(case_df.date)
     
     # merge
     df = case_df.merge(hosp_df, on=["location", "date"], how = "left")
@@ -202,10 +216,10 @@ if __name__ == "__main__":
     # parse arguments
     parser = argparse.ArgumentParser(description="hierarchicalGP")
     parser.add_argument("--forecast_date", nargs="?", default='2020-12-07', type = str)
-    parser.add_argument("--case_type", nargs="?", default='report', type=str)
+    parser.add_argument("--case_type", nargs="?", default='test', type=str)
     parser.add_argument("--case_timing", nargs="?", default='final', type=str)
     parser.add_argument("--transform", nargs="?", default='fourth_rt', type=str)
-    parser.add_argument("--model_group", nargs="?", default='SARIX', type=str)
+    parser.add_argument("--model_group", nargs="?", default='VAR', type=str)
     args = parser.parse_args()
     forecast_date = args.forecast_date
     case_type = args.case_type
