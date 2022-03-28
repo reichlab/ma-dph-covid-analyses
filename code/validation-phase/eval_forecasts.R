@@ -71,7 +71,9 @@ scores <- covidHubUtils::score_forecasts(
   truth_data %>% filter(target_end_date <= "2021-06-12"),
   use_median_as_point = TRUE)
 
-mean_scores <- scores %>% group_by(model) %>%
+mean_scores <- scores %>%
+  filter(!(forecast_date %in% c("2020-12-07", "2020-12-14", "2021-02-01", "2021-03-15"))) %>%
+  group_by(model) %>%
   summarize(wis = mean(wis), coverage_95 = mean(coverage_95)) %>%
   arrange(wis) %>%
   as.data.frame()
@@ -79,7 +81,7 @@ mean_scores
 
 # plot the forecasts
 models_to_plot <- mean_scores %>%
-  filter(wis < 28) %>%
+  filter(wis < 25) %>%
   pull(model)
 
 forecasts_to_plot <- covidHubUtils::get_plot_forecast_data(
@@ -132,7 +134,7 @@ p
 
 
 models_to_plot <- mean_scores %>%
-  filter(wis < 27) %>%
+  filter(wis < 22.8) %>%
   pull(model)
 
 forecasts_to_plot <- covidHubUtils::get_plot_forecast_data(
@@ -166,6 +168,10 @@ p <- ggplot() +
   #   values = c("95%" = 0.5)
   # ) +
   geom_line(
+    data = truth_data %>% dplyr::select(-model) %>% dplyr::filter(target_end_date < "2021-07-01"),
+    mapping = aes(x = target_end_date, y = value)
+  ) +
+  geom_line(
     data = forecasts_to_plot %>%
       dplyr::filter(is.na(`Prediction Interval`)),
     mapping = aes(
@@ -174,10 +180,7 @@ p <- ggplot() +
       color = model,
       group = paste0(model, forecast_date)
     ),
-  ) +
-  geom_line(
-    data = truth_data %>% dplyr::select(-model) %>% dplyr::filter(target_end_date < "2021-07-01"),
-    mapping = aes(x = target_end_date, y = value)
+    size=1
   ) +
   # ylim(0, 500) +
   facet_wrap( ~ forecast_date, scales = "free_y")

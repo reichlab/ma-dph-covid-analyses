@@ -60,7 +60,8 @@ if __name__ == "__main__":
       'case_timing': ['final'],
       'case_type': ['report', 'test'],
       # 'case_timing': ['final', 'realtime']
-      'model_group': ['VAR']
+      # 'model_group': ['VAR']
+      'model_group': ['SARIX']
     })
 
     # list of python commands for each variation
