@@ -77,5 +77,72 @@ forecast(select(my_models, "tcfs_lag11"), tail(all_data,1))
 #    - for each of the k samples, forecast 1 step ahead for hosps, simulating l draws for each
 #    - the resulting k*l samples are stored in hosp_sims[,h]  
 
+# this works for model TSLM(fourth_rt_transformation(hosps) ~ hosps_lag1)
+#TODO: change predictor_data parameter to a tsibble of covariates for h = 1 date`
+forecast_by_step_with_simulations <- function(model, horizon, k, l, predictor_data){
+  n_sim <- k * l
+  hosp_sims <- matrix(nrow = n_sim, ncol = horizon)
+  
+  for (h in seq(horizon)){
+    if (h == 1) {
+      forecast <- model %>% 
+        # new_data should have lagged covariates for the day after forecast date
+        # TODO: need to change head(predictor_data,1)
+        forecast(new_data=head(predictor_data,1))
+      # cannot get distribution from refit
+      #refit(tail(predictor_data,1))
+      
+      # TODO: replace hosp to a variable.
+      simulations <- distributional::generate(forecast$hosps, times = n_sim)[[1]]
+      
+      hosp_sims[,h] <- simulations
+    } else {
+      print("h")
+      print(h)
+      # TODO: create random k row idx
+      
+      # k x h-1 
+      k_versions <- hosp_sims[1:k, 1:(h-1)]
+      
+      if (h == 2){
+        # reformat forecast for h = 1
+        prev_forecast_ts <- head(predictor_data,1)
+        prev_forecast_ts$hosps <- forecast$.mean
+      }
+      
+      # after k loop, this should have length n_sim
+      h_n_sim_simulations <- c()
+      for (i in seq(k)){
+        print("i in k loop")
+        print(i)
+        # create new data
+        new_data <-tsibble::append_row(prev_forecast_ts, h-1)
+        # fill in values in k_versions back to new_data
+        if (h == 2){
+          new_data$hosps[2] <- k_versions[i]
+        }
+        if (h > 2){
+          new_data$hosps[2:h] <- k_versions[i,]
+        } 
+        # calculate lagged values
+        # TODO: add p and P as function parameters
+        new_data <- add_lags(new_data,"hosps", p=1, P = 0)
+        
+        # forecast 
+        h_k_forecast <- model %>%
+          forecast(tail(new_data,1))
+        
+        # TODO: replace hosp to a variable.
+        # l simulations 
+        h_k_simulations <- distributional::generate(tail(h_k_forecast,1)$hosps, times = l)[[1]]
+        
+        #hosp_sims[seq((i-1)*l+1,i*l+1), h] <- h_k_simulations
+        h_n_sim_simulations <- c(h_n_sim_simulations, h_k_simulations)
+      }
+      hosp_sims[,h] <- h_n_sim_simulations
+    }
+  }
+  return (hosp_sims)
+}
 
 
