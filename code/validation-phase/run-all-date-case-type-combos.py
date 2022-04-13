@@ -46,8 +46,9 @@ if __name__ == "__main__":
 
     # forecast dates for analysis: Mondays from 2020-12-07 to 2021-06-07
     first_forecast_date = date.fromisoformat("2020-12-07")
-    last_forecast_date = date.fromisoformat("2021-06-07")
-    # last_forecast_date = date.fromisoformat("2020-12-21")
+    last_forecast_date = date.fromisoformat("2020-12-21")
+    # first_forecast_date = date.fromisoformat("2020-12-28")
+    # last_forecast_date = date.fromisoformat("2021-06-07")
     num_forecast_dates = (last_forecast_date - first_forecast_date).days // 7 + 1
     forecast_dates = [str(first_forecast_date + i * timedelta(days=7)) \
         for i in range(num_forecast_dates)]
@@ -58,10 +59,12 @@ if __name__ == "__main__":
       # 'case_type': ['report'],
       # 'case_type': ['test'],
       'case_timing': ['final'],
-      'case_type': ['report', 'test'],
+      # 'case_type': ['none']
+      # 'case_type': ['report', 'test']
+      'case_type': ['none', 'report', 'test']
       # 'case_timing': ['final', 'realtime']
       # 'model_group': ['VAR']
-      'model_group': ['SARIX']
+      # 'model_group': ['SARIX']
     })
 
     # list of python commands for each variation
@@ -75,7 +78,7 @@ if __name__ == "__main__":
 
     # run in parallel on local computer or submit cluster jobs
     if args.run_setting == 'local':
-      with Pool(processes=27) as pool:
+      with Pool(processes=20) as pool:
         pool.map(run_command, commands)
     elif args.run_setting == 'cluster':
       # remove old sh scripts

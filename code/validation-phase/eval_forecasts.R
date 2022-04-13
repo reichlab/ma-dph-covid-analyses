@@ -2,10 +2,26 @@ library(tidyverse)
 library(covidHubUtils)
 theme_set(theme_bw())
 
+#' Parse model names
+parse_model_names <- function(model) {
+  name_segments <- str_split(model, "_")
+  return(data.frame(
+    case_type = sapply(name_segments, function(x) {
+      if (x[1] %in% c("none", "report", "test")) x[1] else NA_character_
+      }),
+    case_timing = sapply(name_segments, function(x) x[2]),
+    smooth_case = sapply(name_segments, function(x) x[5]),
+    p = sapply(name_segments, function(x) x[8]),
+    d = sapply(name_segments, function(x) x[10]),
+    P = sapply(name_segments, function(x) x[12]),
+    D = sapply(name_segments, function(x) x[14])
+  ))
+}
+
 inc_hosp_targets <- paste(0:130, "day ahead inc hosp")
 
 models <- list.dirs(
-  "validation_forecasts",
+  "forecasts",
   full.names = FALSE,
   recursive = FALSE)
 
@@ -19,7 +35,7 @@ forecasts <- load_forecasts(
   types = c("point", "quantile"),
   targets = inc_hosp_targets,
   source = "local_hub_repo",
-  hub_repo_path = "validation_forecasts",
+  hub_repo_path = "forecasts",
   data_processed_subpath = "",
   verbose = FALSE,
   as_of = NULL,
@@ -71,18 +87,38 @@ scores <- covidHubUtils::score_forecasts(
   truth_data %>% filter(target_end_date <= "2021-06-12"),
   use_median_as_point = TRUE)
 
+scores <- dplyr::bind_cols(
+  scores,
+  parse_model_names(scores$model)
+)
+
 mean_scores <- scores %>%
-  filter(!(forecast_date %in% c("2020-12-07", "2020-12-14", "2021-02-01", "2021-03-15"))) %>%
   group_by(model) %>%
-  summarize(wis = mean(wis), coverage_95 = mean(coverage_95)) %>%
-  arrange(wis) %>%
+  summarize(wis = mean(wis),
+            mae = mean(abs_error),
+            coverage_95 = mean(coverage_95)) %>%
+  arrange(wis)
+
+mean_scores <- dplyr::bind_cols(
+  mean_scores,
+  parse_model_names(mean_scores$model)
+) %>%
   as.data.frame()
 mean_scores
 
 # plot the forecasts
-models_to_plot <- mean_scores %>%
-  filter(wis < 25) %>%
-  pull(model)
+# models_to_plot <- mean_scores %>%
+#   filter(wis < 25) %>%
+#   pull(model)
+
+models_to_plot <- c(
+  "COVIDhub-ensemble", "COVIDhub-baseline",
+  mean_scores %>%
+    dplyr::filter(!is.na(case_type)) %>%
+    dplyr::group_by(case_type) %>%
+    dplyr::slice_min(wis) %>%
+    dplyr::pull(model)
+)
 
 forecasts_to_plot <- covidHubUtils::get_plot_forecast_data(
   forecast_data = combined_forecasts,
@@ -98,22 +134,23 @@ forecasts_to_plot <- covidHubUtils::get_plot_forecast_data(
 forecasts_to_plot <- forecasts_to_plot %>%
   dplyr::filter(!grepl("Observed Data", model))
 
+# plot of predictive medians and 95% intervals, facetted by model
 p <- ggplot() +
-  # geom_ribbon(
-  #   data = forecasts_to_plot %>%
-  #     dplyr::filter(!is.na(`Prediction Interval`)),
-  #   mapping = aes(
-  #     x = target_end_date,
-  #     ymin = lower,
-  #     ymax = upper,
-  #     alpha = `Prediction Interval`,
-  #     group = paste0(model, forecast_date)
-  #   ),
-  #   fill = "cornflowerblue"
-  # ) +
-  # scale_alpha_manual(
-  #   values = c("95%" = 0.5)
-  # ) +
+  geom_ribbon(
+    data = forecasts_to_plot %>%
+      dplyr::filter(!is.na(`Prediction Interval`)),
+    mapping = aes(
+      x = target_end_date,
+      ymin = lower,
+      ymax = upper,
+      alpha = `Prediction Interval`,
+      group = paste0(model, forecast_date)
+    ),
+    fill = "cornflowerblue"
+  ) +
+  scale_alpha_manual(
+    values = c("95%" = 0.5)
+  ) +
   geom_line(
     data = forecasts_to_plot %>%
       dplyr::filter(is.na(`Prediction Interval`)),
@@ -128,29 +165,12 @@ p <- ggplot() +
     data = truth_data %>% dplyr::select(-model) %>% dplyr::filter(target_end_date < "2021-07-01"),
     mapping = aes(x = target_end_date, y = value)
   ) +
-  ylim(0, 500) +
+  # ylim(0, 500) +
   facet_wrap( ~ model, scales = "free_y", ncol = 2)
 p
 
 
-models_to_plot <- mean_scores %>%
-  filter(wis < 22.8) %>%
-  pull(model)
-
-forecasts_to_plot <- covidHubUtils::get_plot_forecast_data(
-  forecast_data = combined_forecasts,
-  truth_data = truth_data,
-  # models_to_plot = unique(combined_forecasts$model),
-  models_to_plot = models_to_plot,
-  horizons_to_plot = 28,
-  quantiles_to_plot = c(0.025, 0.5, 0.975),
-  # quantiles_to_plot = c(0.025, 0.25, 0.5, 0.75, 0.975),
-  target_variable_to_plot = "inc hosp",
-  hub = "US")
-
-forecasts_to_plot <- forecasts_to_plot %>%
-  dplyr::filter(!grepl("Observed Data", model))
-
+# plot of predictive medians only (no intervals), facetted by forecast date
 p <- ggplot() +
   # geom_ribbon(
   #   data = forecasts_to_plot %>%
@@ -186,6 +206,20 @@ p <- ggplot() +
   facet_wrap( ~ forecast_date, scales = "free_y")
 p
 
+
+
+# plot of mean WIS by forecast date
+mean_scores_by_forecast_date <- scores %>%
+  dplyr::filter(model %in% models_to_plot) %>%
+  dplyr::group_by(model, forecast_date) %>%
+  dplyr::summarize(
+    wis = mean(wis),
+    mae = mean(abs_error)
+  )
+p <- ggplot(mean_scores_by_forecast_date) +
+  geom_line(mapping = aes(x = forecast_date, y = wis, color = model, linetype = model)) +
+  theme_bw()
+p
 
 # covidHubUtils::plot_forecasts(
 #     forecast_data = stl_forecasts,
