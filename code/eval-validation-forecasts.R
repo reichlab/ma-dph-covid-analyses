@@ -26,10 +26,9 @@ models <- list.dirs(
   recursive = FALSE)
 
 forecasts <- load_forecasts(
-#  models = "report_final_VAR",
-  # models = models,
-  # dates = "2021-03-08",
-  # dates = '2020-12-07',
+  dates = seq.Date(from = as.Date("2020-12-07"),
+                   to = as.Date("2021-06-07"),
+                   by = 7),
   date_window_size = 6,
   locations = c("25"),
   types = c("point", "quantile"),

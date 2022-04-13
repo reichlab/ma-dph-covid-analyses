@@ -168,21 +168,50 @@ if __name__ == "__main__":
 	# transform = 'fourth_rt'
 	
 	# define model variations to fit
-	if case_type == 'none':
-		smooth_case_options = [False]
+	if forecast_date <= '2021-06-07':
+		# validation phase
+		if case_type == 'none':
+			smooth_case_options = [False]
+		else:
+			smooth_case_options = [True, False]
+		
+		sari_variations =  expand_grid({
+			'smooth_case': smooth_case_options,
+			'p': [p for p in range(5)],
+			'P': [P for P in range(3)],
+			'd': [d for d in range(2)],
+			'D': [D for D in range(2)]
+		})
+		
+		# keep only variations with some kind of lag
+		sari_variations = sari_variations[(sari_variations.p != 0) | (sari_variations.P != 0)]
 	else:
-		smooth_case_options = [True, False]
-	
-	sari_variations =  expand_grid({
-		'smooth_case': smooth_case_options,
-		'p': [p for p in range(5)],
-		'P': [P for P in range(3)],
-		'd': [d for d in range(2)],
-		'D': [D for D in range(2)]
-	})
-	
-	# keep only variations with some kind of lag
-	sari_variations = sari_variations[(sari_variations.p != 0) | (sari_variations.P != 0)]
+		# prospective test set evaluation phase
+		# settings were chosen based on validation set performance; see eval_forecasts.R
+		if case_type == 'none':
+			sari_variations = pd.DataFrame({
+				'smooth_case': [False],
+				'p': [2],
+				'd': [1],
+				'P': [2],
+				'D': [0]
+			})
+		elif case_type == 'report':
+			sari_variations = pd.DataFrame({
+				'smooth_case': [False, True],
+				'p': [2, 2],
+				'd': [0, 0],
+				'P': [1, 0],
+				'D': [1, 1]
+			})
+		else:
+			sari_variations = pd.DataFrame({
+				'smooth_case': [False, True],
+				'p': [2, 2],
+				'd': [0, 0],
+				'P': [1, 0],
+				'D': [1, 1]
+			})
 	
 	# keep only variations without a model fit file
 	model_names = [build_model_name(case_type,

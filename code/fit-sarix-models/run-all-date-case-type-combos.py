@@ -33,7 +33,7 @@ if __name__ == "__main__":
           raise ValueError('Not a valid boolean string')
       return s == 'True'
 
-    parser = argparse.ArgumentParser(description="validation phase")
+    parser = argparse.ArgumentParser(description="Run MA COVID hospitalization forecasting models")
     parser.add_argument("--run_setting", choices = ['local','mghpcc'], nargs="?", default='local', type = str)
     parser.add_argument("--cores", nargs="?", default=1, type=int)
     parser.add_argument("--mem", nargs="?", default="1000", type=str)
@@ -41,14 +41,20 @@ if __name__ == "__main__":
     parser.add_argument("--queue", nargs="?", default="long", type=str)
     parser.add_argument("--sh_path", nargs="?", default="sh", type=str)
     parser.add_argument("--log_path", nargs="?", default="log", type=str)
+    parser.add_argument("--phase", choices=['validation', 'test'], default="validation", type=str)
 
     args = parser.parse_args()
 
-    # forecast dates for analysis: Mondays from 2020-12-07 to 2021-06-07
-    first_forecast_date = date.fromisoformat("2020-12-07")
-    last_forecast_date = date.fromisoformat("2020-12-21")
-    # first_forecast_date = date.fromisoformat("2020-12-28")
-    # last_forecast_date = date.fromisoformat("2021-06-07")
+    # forecast dates for analysis:
+    # Validation phase is Mondays from 2020-12-07 to 2021-06-07
+    # Prospective test phase is Mondays from 2021-06-14 to 2022-03-14
+    if args.phase == 'validation':
+      first_forecast_date = date.fromisoformat("2020-12-07")
+      last_forecast_date = date.fromisoformat("2021-06-07")
+    elif args.phase == 'test':
+      first_forecast_date = date.fromisoformat("2021-06-14")
+      last_forecast_date = date.fromisoformat("2022-03-14")
+
     num_forecast_dates = (last_forecast_date - first_forecast_date).days // 7 + 1
     forecast_dates = [str(first_forecast_date + i * timedelta(days=7)) \
         for i in range(num_forecast_dates)]
@@ -56,21 +62,14 @@ if __name__ == "__main__":
     # all combinations of forecast date and case type
     variations = expand_grid({
       'forecast_date': forecast_dates,
-      # 'case_type': ['report'],
-      # 'case_type': ['test'],
       'case_timing': ['final'],
-      # 'case_type': ['none']
-      # 'case_type': ['report', 'test']
       'case_type': ['none', 'report', 'test']
-      # 'case_timing': ['final', 'realtime']
-      # 'model_group': ['VAR']
-      # 'model_group': ['SARIX']
     })
 
     # list of python commands for each variation
     commands = [
       ' '.join(
-        ['python3 code/validation-phase/run-all-models-one-date-case-type.py'] + \
+        ['python3 code/fit-sarix-models/run-all-models-one-date-case-type.py'] + \
           ['--' + arg_name + ' ' + str(variations[arg_name][i]) \
             for arg_name in variations.columns]) \
         for i in range(variations.shape[0])
