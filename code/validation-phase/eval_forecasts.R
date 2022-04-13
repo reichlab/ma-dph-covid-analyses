@@ -274,3 +274,25 @@ p
 # }
 # dev.off()
 
+
+# final selection of models
+sarix_mean_scores <- mean_scores %>%
+    dplyr::filter(!is.na(case_type)) %>%
+    dplyr::mutate(rank = row_number())
+
+# select best model within each combination of case_type and smooth_case options
+sarix_mean_scores %>%
+    dplyr::group_by(case_type, smooth_case) %>%
+    dplyr::slice_min(wis) %>%
+    dplyr::arrange(wis)
+
+# Output is:
+# # A tibble: 5 × 12
+# # Groups:   case_type, smooth_case [5]
+#   model                                                  wis   mae coverage_95 case_type case_timing smooth_case p     d     P     D      rank
+#   <chr>                                                <dbl> <dbl>       <dbl> <chr>     <chr>       <chr>       <chr> <chr> <chr> <chr> <int>
+# 1 report_final_smooth_case_False_SARIX_p_2_d_0_P_1_D_1  19.0  28.4       0.986 report    final       False       2     0     1     1         1
+# 2 report_final_smooth_case_True_SARIX_p_2_d_0_P_0_D_1   19.1  27.4       0.996 report    final       True        2     0     0     1         2
+# 3 test_final_smooth_case_False_SARIX_p_2_d_0_P_1_D_1    20.5  31.0       0.984 test      final       False       2     0     1     1        10
+# 4 test_final_smooth_case_True_SARIX_p_2_d_0_P_0_D_1     22.1  31.7       0.994 test      final       True        2     0     0     1        24
+# 5 none_final_smooth_case_False_SARIX_p_2_d_1_P_2_D_0    23.0  32.6       0.994 none      final       False       2     1     2     0        36
