@@ -106,8 +106,8 @@ def load_data(as_of = None, end_day = "2021-07-01", case_type = 'report', case_t
 	return df
 
 
-def save_forecast_file(location, forecast_date, pred_qs, q_levels, model_name):
-	# format predictions as a data frame with required columns
+def construct_forecast_df(location, forecast_date, pred_qs, q_levels, base_target):
+	# format predictions for one target variable as a data frame with required columns
 	horizons_str = [str(i + 1) for i in range(28)]
 	preds_df = pd.DataFrame(pred_qs, columns = horizons_str)
 	preds_df['forecast_date'] = forecast_date
@@ -118,11 +118,26 @@ def save_forecast_file(location, forecast_date, pred_qs, q_levels, model_name):
 						var_name='horizon')
 	preds_df['target_end_date'] = pd.to_datetime(preds_df['forecast_date']).values + \
 		pd.to_timedelta(preds_df['horizon'].astype(int), 'days')
-	preds_df['base_target'] = ' day ahead inc hosp'
+	preds_df['base_target'] = base_target
 	preds_df['target'] = preds_df['horizon'] + preds_df['base_target']
 	preds_df['type'] = 'quantile'
 	preds_df = preds_df[['location', 'forecast_date', 'target', 'target_end_date', 'type', 'quantile', 'value']]
-	
+	return preds_df
+
+
+def save_forecast_file(location, forecast_date, hosp_pred_qs, case_pred_qs, q_levels, model_name):
+	hosp_pred_df = construct_forecast_df(location,
+																			 forecast_date,
+																			 hosp_pred_qs,
+																			 q_levels,
+																			 ' day ahead inc hosp')
+	case_pred_df = construct_forecast_df(location,
+																			 forecast_date,
+																			 case_pred_qs,
+																			 q_levels,
+																			 ' day ahead inc case')
+	preds_df = pd.concat([hosp_pred_df, case_pred_df], axis = 0)
+
 	# save predictions
 	model_dir = Path("forecasts") / model_name
 	model_dir.mkdir(mode=0o775, parents=True, exist_ok=True)
@@ -265,7 +280,7 @@ if __name__ == "__main__":
 		# how many forecasts to keep relative to forecast_date
 		extra_horizons_rel_forecast_date = (due_date - pd.to_datetime(forecast_date)).days
 		effective_horizon_rel_forecast_date = int(28 + extra_horizons_rel_forecast_date)
-
+		
 		# quantile levels at which to generate predictions
 		q_levels = np.array([0.01, 0.025, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35,
 								0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80,
@@ -300,27 +315,44 @@ if __name__ == "__main__":
 				num_samples = 1000,
 				num_chains = 1)
 
-			# pred_samples = sarix_fit.predictions_orig[:, extra_horizons_rel_obs:, 1]
-			pred_samples = sarix_fit.predictions_orig[:, :, -1]
+			pred_samples = sarix_fit.predictions_orig
 
 			# extract predictive quantiles for response variable
-			pred_qs = np.percentile(pred_samples, q_levels * 100.0, axis = 0)
+			hosp_pred_qs = np.percentile(pred_samples[:, :, -1], q_levels * 100.0, axis = 0)
 
 			# subset to those we want to keep
-			pred_qs = pred_qs[:, extra_horizons_rel_obs:]
+			hosp_pred_qs = hosp_pred_qs[:, extra_horizons_rel_obs:]
 
 			# invert data transform
 			if transform == "log":
-				pred_qs = np.exp(pred_qs)
+				hosp_pred_qs = np.exp(hosp_pred_qs)
 			elif transform == "fourth_rt":
-				pred_qs = np.maximum(0.0, pred_qs)**4
+				hosp_pred_qs = np.maximum(0.0, hosp_pred_qs)**4
 			elif transform == "sqrt":
-				pred_qs = np.maximum(0.0, pred_qs)**2
+				hosp_pred_qs = np.maximum(0.0, hosp_pred_qs)**2
+			
+			if case_type == 'none':
+				case_pred_qs = None
+			else:
+				# extract predictive quantiles for cases
+				case_pred_qs = np.percentile(pred_samples[:, :, -2], q_levels * 100.0, axis = 0)
+
+				# subset to those we want to keep
+				case_pred_qs = case_pred_qs[:, extra_horizons_rel_obs:]
+
+				# invert data transform
+				if transform == "log":
+					case_pred_qs = np.exp(case_pred_qs)
+				elif transform == "fourth_rt":
+					case_pred_qs = np.maximum(0.0, case_pred_qs)**4
+				elif transform == "sqrt":
+					case_pred_qs = np.maximum(0.0, case_pred_qs)**2
 
 			model_name = build_model_name(case_type, case_timing, smooth_case, p, d, P, D)
 			save_forecast_file(location='25',
 								forecast_date=forecast_date,
-								pred_qs=pred_qs,
+								hosp_pred_qs=hosp_pred_qs,
+								case_pred_qs=case_pred_qs,
 								q_levels=q_levels,
 								model_name=model_name)
 			param_samples = {k:v for k,v in sarix_fit.samples.items() \
