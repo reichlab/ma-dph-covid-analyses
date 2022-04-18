@@ -131,12 +131,15 @@ def save_forecast_file(location, forecast_date, hosp_pred_qs, case_pred_qs, q_le
 																			 hosp_pred_qs,
 																			 q_levels,
 																			 ' day ahead inc hosp')
-	case_pred_df = construct_forecast_df(location,
-																			 forecast_date,
-																			 case_pred_qs,
-																			 q_levels,
-																			 ' day ahead inc case')
-	preds_df = pd.concat([hosp_pred_df, case_pred_df], axis = 0)
+	if case_pred_qs is None:
+		preds_df = hosp_pred_df
+	else:
+		case_pred_df = construct_forecast_df(location,
+																				forecast_date,
+																				case_pred_qs,
+																				q_levels,
+																				' day ahead inc case')
+		preds_df = pd.concat([hosp_pred_df, case_pred_df], axis = 0)
 
 	# save predictions
 	model_dir = Path("forecasts") / model_name
