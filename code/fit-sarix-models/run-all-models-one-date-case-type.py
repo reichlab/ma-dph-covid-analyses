@@ -24,7 +24,7 @@ def expand_grid(data_dict):
 	return pd.DataFrame.from_records(rows, columns=data_dict.keys())
 
 
-def load_data(as_of = None, end_day = "2021-07-01", case_type = 'report', case_timing = 'final'):
+def load_data(as_of = None, end_day = "2021-07-01", case_type = 'report', case_timing = 'final', state = 'ma'):
 	"""
 	Load data for MA cases and hosps from covidcast
 	Parameters
@@ -33,6 +33,12 @@ def load_data(as_of = None, end_day = "2021-07-01", case_type = 'report', case_t
 		Default to None.
 	end_day: string of date in YYYY-MM-DD format. 
 		Default to "2021-07-01"
+	case_type: string of recording method for Covid-19 cases
+		Default to 'report'
+	case_timing: string to indiciate versioning.
+		Default to 'final'
+	state: string of a 2-letter state abbreviation.
+		Default to 'ma'
 	Returns
 	-------
 	df: data frame
@@ -41,7 +47,7 @@ def load_data(as_of = None, end_day = "2021-07-01", case_type = 'report', case_t
 	"""
 	# override as_of = None to use the same as_of as is used for cases
 	if as_of is None:
-		hosp_as_of = '2022-03-14'
+		hosp_as_of = '2022-04-29'
 	else:
 		hosp_as_of = as_of
 	
@@ -51,7 +57,7 @@ def load_data(as_of = None, end_day = "2021-07-01", case_type = 'report', case_t
 							   start_day=date.fromisoformat("2020-10-01"),
 							   end_day=date.fromisoformat(end_day),
 							   geo_type="state",
-							   geo_values="ma",
+							   geo_values=state,
 							   as_of=date.fromisoformat(hosp_as_of))
 	hosp_df = hosp_df[["geo_value", "time_value", "value"]]
 	hosp_df.columns = ["location", "date", "hosp"]
@@ -59,7 +65,7 @@ def load_data(as_of = None, end_day = "2021-07-01", case_type = 'report', case_t
 	# load cases
 	if case_type == 'report':
 		if case_timing == 'final':
-			case_as_of = '2022-03-14'
+			case_as_of = '2022-04-29'
 		else:
 			case_as_of = as_of
 		
@@ -68,7 +74,7 @@ def load_data(as_of = None, end_day = "2021-07-01", case_type = 'report', case_t
 								   start_day=date.fromisoformat("2020-10-01"),
 								   end_day=date.fromisoformat(end_day),
 								   geo_type="state",
-								   geo_values="ma",
+								   geo_values=state,
 								   as_of=date.fromisoformat(case_as_of))
 		case_df = case_df[["geo_value", "time_value", "value"]]
 		case_df.columns = ["location", "date", "case"]
@@ -81,13 +87,18 @@ def load_data(as_of = None, end_day = "2021-07-01", case_type = 'report', case_t
 		csv_files = os.listdir('csv-data')
 		as_ofs = [f[21:-4] for f in csv_files]
 		if case_timing == 'final':
-			case_as_of = '2022-03-14'
+			case_as_of = '2022-04-29'
 		else:
 			subset_as_ofs = [ao for ao in as_ofs if ao <= as_of]
 			case_as_of = max(subset_as_ofs)
 		
-		case_df = pd.read_csv('csv-data/MA-DPH-csvdata-covid-' + case_as_of + '.csv')
-		case_df['location'] = 'ma'
+		if state == 'ma':
+			case_df_path = 'csv-data/MA-DPH-csvdata-covid-' + case_as_of + '.csv'
+		elif state == 'ca':
+			case_df_path = 'csv-data/CA-DPH-testdate-covid-' + case_as_of + '.csv'
+			
+		case_df = pd.read_csv(case_df_path)
+		case_df['location'] = state
 		case_df = case_df[['location', 'test_date', 'new_positive']]
 		case_df.columns = ['location', 'date', 'case']
 		
