@@ -21,31 +21,48 @@ parse_model_names <- function(model) {
 inc_hosp_targets <- paste(0:130, "day ahead inc hosp")
 
 models <- list.dirs(
-  "forecasts",
+  "forecasts/ma",
   full.names = FALSE,
   recursive = FALSE)
 
-forecasts <- load_forecasts(
-  dates = seq.Date(from = as.Date("2020-12-07"),
-                   to = as.Date("2021-06-07"),
-                   by = 7),
-  date_window_size = 6,
-  locations = c("25"),
-  types = c("point", "quantile"),
-  targets = inc_hosp_targets,
-  source = "local_hub_repo",
-  hub_repo_path = "forecasts",
-  data_processed_subpath = "",
-  verbose = FALSE,
-  as_of = NULL,
-  hub = c("US")
+forecasts <- dplyr::bind_rows(
+  load_forecasts(
+    dates = seq.Date(from = as.Date("2020-12-07"),
+                    to = as.Date("2021-06-07"),
+                    by = 7),
+    date_window_size = 6,
+    locations = c("06", "25"),
+    types = c("point", "quantile"),
+    targets = inc_hosp_targets,
+    source = "local_hub_repo",
+    hub_repo_path = "forecasts/ca",
+    data_processed_subpath = "",
+    verbose = FALSE,
+    as_of = NULL,
+    hub = c("US")
+  ),
+  load_forecasts(
+    dates = seq.Date(from = as.Date("2020-12-07"),
+                    to = as.Date("2021-06-07"),
+                    by = 7),
+    date_window_size = 6,
+    locations = c("06", "25"),
+    types = c("point", "quantile"),
+    targets = inc_hosp_targets,
+    source = "local_hub_repo",
+    hub_repo_path = "forecasts/ma",
+    data_processed_subpath = "",
+    verbose = FALSE,
+    as_of = NULL,
+    hub = c("US")
+  ),
 )
 
 hub_forecasts <- load_forecasts(
   models = c("COVIDhub-baseline", "COVIDhub-ensemble"),
   dates = unique(forecasts$forecast_date),
   date_window_size = 6,
-  locations = c("25"),
+  locations = c("06", "25"),
   types = c("point", "quantile"),
   targets = inc_hosp_targets,
   source = "local_hub_repo",
@@ -59,7 +76,8 @@ combined_forecasts <- dplyr::bind_rows(forecasts, hub_forecasts)
 
 combined_forecasts %>%
   dplyr::filter(type == "quantile") %>%
-  dplyr::count(model) %>%
+  dplyr::count(location, model) %>%
+  tidyr::pivot_wider(names_from = "location", values_from = "n") %>%
   as.data.frame()
 
 # forecasts <- covidHubUtils::align_forecasts(forecasts)
@@ -72,9 +90,11 @@ combined_forecasts %>%
 # }
 
 truth_data <- load_truth(
+  as_of = "2022-04-29",
   truth_source = "HealthData",
   target_variable = "inc hosp",
-  locations = c("25"),
+  locations = c("06", "25"),
+  data_location = "covidData",
   hub = "US"
 )
 
@@ -92,11 +112,11 @@ scores <- dplyr::bind_cols(
 )
 
 mean_scores <- scores %>%
-  group_by(model) %>%
+  group_by(location, model) %>%
   summarize(wis = mean(wis),
             mae = mean(abs_error),
             coverage_95 = mean(coverage_95)) %>%
-  arrange(wis)
+  arrange(location, wis)
 
 mean_scores <- dplyr::bind_cols(
   mean_scores,
@@ -105,15 +125,11 @@ mean_scores <- dplyr::bind_cols(
   as.data.frame()
 mean_scores
 
-# plot the forecasts
-# models_to_plot <- mean_scores %>%
-#   filter(wis < 25) %>%
-#   pull(model)
-
+# plot the forecasts for MA
 models_to_plot <- c(
   "COVIDhub-ensemble", "COVIDhub-baseline",
   mean_scores %>%
-    dplyr::filter(!is.na(case_type)) %>%
+    dplyr::filter(location == "25", !is.na(case_type)) %>%
     dplyr::group_by(case_type) %>%
     dplyr::slice_min(wis) %>%
     dplyr::pull(model)
@@ -127,6 +143,7 @@ forecasts_to_plot <- covidHubUtils::get_plot_forecast_data(
   horizons_to_plot = 28,
   quantiles_to_plot = c(0.025, 0.5, 0.975),
   # quantiles_to_plot = c(0.025, 0.25, 0.5, 0.75, 0.975),
+  locations_to_plot = "25",
   target_variable_to_plot = "inc hosp",
   hub = "US")
 
@@ -161,7 +178,9 @@ p <- ggplot() +
     color = "blue"
   ) +
   geom_line(
-    data = truth_data %>% dplyr::select(-model) %>% dplyr::filter(target_end_date < "2021-07-01"),
+    data = truth_data %>%
+      dplyr::select(-model) %>%
+      dplyr::filter(target_end_date < "2021-07-01", location == "25"),
     mapping = aes(x = target_end_date, y = value)
   ) +
   # ylim(0, 500) +
@@ -204,6 +223,78 @@ p <- ggplot() +
   # ylim(0, 500) +
   facet_wrap( ~ forecast_date, scales = "free_y")
 p
+
+
+
+# plot forecasts for CA
+models_to_plot <- c(
+  "COVIDhub-ensemble", "COVIDhub-baseline",
+  mean_scores %>%
+    dplyr::filter(location == "06", !is.na(case_type)) %>%
+    # dplyr::group_by(case_type) %>%
+    dplyr::slice_min(wis, n =3) %>%
+    dplyr::pull(model)
+)
+
+forecasts_to_plot <- covidHubUtils::get_plot_forecast_data(
+  forecast_data = combined_forecasts,
+  truth_data = truth_data,
+  # models_to_plot = unique(combined_forecasts$model),
+  models_to_plot = models_to_plot,
+  horizons_to_plot = 28,
+  quantiles_to_plot = c(0.025, 0.5, 0.975),
+  # quantiles_to_plot = c(0.025, 0.25, 0.5, 0.75, 0.975),
+  locations_to_plot = "06",
+  target_variable_to_plot = "inc hosp",
+  hub = "US")
+
+forecasts_to_plot <- forecasts_to_plot %>%
+  dplyr::filter(!grepl("Observed Data", model))
+
+# plot of predictive medians and 95% intervals, facetted by model
+p <- ggplot() +
+  geom_ribbon(
+    data = forecasts_to_plot %>%
+      dplyr::filter(!is.na(`Prediction Interval`)),
+    mapping = aes(
+      x = target_end_date,
+      ymin = lower,
+      ymax = upper,
+      alpha = `Prediction Interval`,
+      group = paste0(model, forecast_date)
+    ),
+    fill = "cornflowerblue"
+  ) +
+  scale_alpha_manual(
+    values = c("95%" = 0.5)
+  ) +
+  geom_line(
+    data = forecasts_to_plot %>%
+      dplyr::filter(is.na(`Prediction Interval`)),
+    mapping = aes(
+      x = target_end_date,
+      y = point,
+      group = paste0(model, forecast_date)
+    ),
+    color = "blue"
+  ) +
+  geom_line(
+    data = truth_data %>%
+            dplyr::select(-model) %>%
+            dplyr::filter(target_end_date < "2021-07-01", location == "06"),
+    mapping = aes(x = target_end_date, y = value)
+  ) +
+  # ylim(0, 500) +
+  facet_wrap( ~ model, scales = "free_y", ncol = 2)
+p
+
+
+
+
+
+
+
+
 
 
 
@@ -277,21 +368,28 @@ p
 # final selection of models
 sarix_mean_scores <- mean_scores %>%
     dplyr::filter(!is.na(case_type)) %>%
+    dplyr::group_by(location) %>%
     dplyr::mutate(rank = row_number())
 
 # select best model within each combination of case_type and smooth_case options
 sarix_mean_scores %>%
-    dplyr::group_by(case_type, smooth_case) %>%
+    dplyr::group_by(location, case_type, smooth_case) %>%
     dplyr::slice_min(wis) %>%
-    dplyr::arrange(wis)
+    dplyr::arrange(wis) %>%
+    dplyr::select(-model)
 
 # Output is:
-# # A tibble: 5 × 12
-# # Groups:   case_type, smooth_case [5]
-#   model                                                  wis   mae coverage_95 case_type case_timing smooth_case p     d     P     D      rank
-#   <chr>                                                <dbl> <dbl>       <dbl> <chr>     <chr>       <chr>       <chr> <chr> <chr> <chr> <int>
-# 1 report_final_smooth_case_False_SARIX_p_2_d_0_P_1_D_1  19.0  28.4       0.986 report    final       False       2     0     1     1         1
-# 2 report_final_smooth_case_True_SARIX_p_2_d_0_P_0_D_1   19.1  27.4       0.996 report    final       True        2     0     0     1         2
-# 3 test_final_smooth_case_False_SARIX_p_2_d_0_P_1_D_1    20.5  31.0       0.984 test      final       False       2     0     1     1        10
-# 4 test_final_smooth_case_True_SARIX_p_2_d_0_P_0_D_1     22.1  31.7       0.994 test      final       True        2     0     0     1        24
-# 5 none_final_smooth_case_False_SARIX_p_2_d_1_P_2_D_0    23.0  32.6       0.994 none      final       False       2     1     2     0        36
+# # A tibble: 10 × 12
+# # Groups:   location, case_type, smooth_case [10]
+#    location   wis   mae coverage_95 case_type case_timing smooth_case p     d     P     D      rank
+#    <chr>    <dbl> <dbl>       <dbl> <chr>     <chr>       <chr>       <chr> <chr> <chr> <chr> <int>
+#  1 25        18.9  29.0       0.987 report    final       True        1     0     1     1         1
+#  2 25        20.0  30.6       0.990 report    final       False       2     0     1     1         4
+#  3 25        21.1  31.9       0.992 test      final       False       2     0     1     1        12
+#  4 25        22.8  32.8       0.994 test      final       True        2     0     0     1        28
+#  5 25        23.1  35.7       0.990 none      final       False       1     0     1     1        35
+#  6 06       123.  186.        0.992 test      final       False       3     1     1     0         1
+#  7 06       128.  201.        0.997 none      final       False       4     1     1     0         3
+#  8 06       131.  184.        0.999 test      final       True        0     1     1     0         5
+#  9 06       141.  218.        0.976 report    final       True        3     1     0     0        18
+# 10 06       142.  216.        0.996 report    final       False       3     1     1     0        19
