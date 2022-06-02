@@ -4,7 +4,7 @@ library(covidData)
 
 theme_set(theme_bw())
 
-forecast_date <- as.Date("2022-01-24")
+forecast_date <- as.Date("2022-01-10")
 final_date <- as.Date("2022-04-29")
 state <- "ca"
 state_code <- substr(covidcast::abbr_to_fips(state), 0,2)
@@ -132,6 +132,8 @@ case_plot <-
         legend.position = c(0.05,0.9), legend.justification = c(0,1), legend.background=element_rect(fill = alpha("white", 0.5))) +
   geom_vline(xintercept = forecast_date+.5, linetype=2, col="grey") + 
   scale_y_continuous(labels = scales::comma, name="incident cases") +
+  scale_color_brewer(palette = "Dark2") +
+  scale_fill_brewer(palette = "Dark2") +
   ggtitle(paste("case data and forecasts:", forecast_date))
 
 ## plot hospitalizations
@@ -139,14 +141,20 @@ hosp_plot <- ggplot(mapping = aes(x=date)) +
   #geom_line(data = as_of_hosp_data, aes(y=inc)) +
   geom_line(data = filter(final_hosp_data, date <= forecast_date), aes(y=inc)) +
   geom_line(data = final_hosp_data, aes(y=inc), alpha=.2) +
+  ## draw forecast ribbons
   geom_ribbon(data = filter(testdate_forecast_data, target_variable == "inc hosp"),
               aes(x=target_end_date, ymin=q0.1, ymax=q0.9, fill=data_type), alpha=.3, size=0) +
   geom_ribbon(data = filter(rptdate_forecast_data, target_variable == "inc hosp"),
               aes(x=target_end_date, ymin=q0.1, ymax=q0.9, fill=data_type), alpha=.3, size=0) +
+  geom_ribbon(data = filter(none_forecast_data, target_variable == "inc hosp"),
+              aes(x=target_end_date, ymin=q0.1, ymax=q0.9), alpha=.3, size=0, fill="#7570b3") +
+  ## draw forecast lines
   geom_line(data = filter(testdate_forecast_data, target_variable == "inc hosp"),
             aes(x=target_end_date, y=q0.5, color=data_type), size=2, alpha=.7) +
   geom_line(data = filter(rptdate_forecast_data, target_variable == "inc hosp"),
             aes(x=target_end_date, y=q0.5, color=data_type), size=2, alpha=.7) +
+  geom_line(data = filter(none_forecast_data, target_variable == "inc hosp"),
+            aes(x=target_end_date, y=q0.5), size=2, alpha=.7, color="#7570b3") +
   scale_x_date(NULL, 
                limits = c(forecast_date - 30, forecast_date+30),
                date_breaks = "1 month", 
@@ -157,6 +165,8 @@ hosp_plot <- ggplot(mapping = aes(x=date)) +
         legend.position = "none") +
   geom_vline(xintercept = forecast_date+.5, linetype=2, col="grey") + 
   scale_y_continuous(labels = scales::comma, name = "incident hospitalizations") +
+  scale_color_brewer(palette = "Dark2") +
+  scale_fill_brewer(palette = "Dark2") +
   ggtitle(paste("hosp data and forecasts:", forecast_date))
 
 cowplot::plot_grid(case_plot, hosp_plot, nrow=2, align="v")
