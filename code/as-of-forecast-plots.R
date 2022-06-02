@@ -105,23 +105,23 @@ none_forecast_data <- read_csv(none_fcast_filename) |>
 case_plot <- 
   ggplot(mapping = aes(x=date, color=data_type)) +
   ## as of data lines
-  geom_point(data = as_of_data, aes(y=value), alpha=.5) +
+  # geom_point(data = as_of_data, aes(y=value), alpha=.5) +
   ## final data line until forecast date
-  geom_line(data = filter(final_data, date<=forecast_date), aes(y=value)) +
+  geom_point(data = filter(final_data, date<=forecast_date), aes(y=value)) +
   ## final smoothed data line until forecast date
-  geom_line(data = filter(final_data_smooth, date<=forecast_date), aes(y=value), size=1.5, alpha=.6) +
+  geom_line(data = filter(final_data_smooth, date<=forecast_date), aes(y=value), alpha=.6) +
   ## final data line after forecast date
-  geom_line(data = filter(final_data, data_type %in% c("test_date_cases", "rpt_date_cases")), aes(y=value), alpha=0.5) +
+  geom_point(data = filter(final_data, data_type %in% c("test_date_cases", "rpt_date_cases")), aes(y=value), alpha=0.5) +
   ## forecast ribbons
   geom_ribbon(data = filter(testdate_forecast_data, target_variable == "inc case"),
             aes(x=target_end_date, ymin=q0.1, ymax=q0.9, fill=data_type), alpha=.3, size=0) +
   geom_ribbon(data = filter(rptdate_forecast_data, target_variable == "inc case"),
             aes(x=target_end_date, ymin=q0.1, ymax=q0.9, fill=data_type), alpha=.3, size=0) +
   ## forecast lines
-  # geom_line(data = filter(testdate_forecast_data, target_variable == "inc case"),
-  #                         aes(x=target_end_date, y=q0.5), alpha=.7, linetype=2) +
-  # geom_line(data = filter(rptdate_forecast_data, target_variable == "inc case"),
-  #           aes(x=target_end_date, y=q0.5),alpha=.7, linetype=2) +
+  geom_line(data = filter(testdate_forecast_data, target_variable == "inc case"),
+            aes(x=target_end_date, y=q0.5), alpha=.7, size=2) +
+  geom_line(data = filter(rptdate_forecast_data, target_variable == "inc case"),
+            aes(x=target_end_date, y=q0.5),alpha=.7, size=2) +
   scale_x_date(NULL, 
                limits = c(forecast_date - 30, forecast_date+30),
                date_breaks = "1 month", 
@@ -129,9 +129,9 @@ case_plot <-
                expand = expansion(add=1)) +
   theme(axis.ticks.length.x = unit(0.5, "cm"), 
         axis.text.x = element_text(vjust = 7, hjust = -0.2),
-        legend.position = c(0.05,0.9), legend.justification = c(0,1)) +
-  geom_vline(xintercept = forecast_date, linetype=2, col="grey") + 
-  ylab("incident cases") +
+        legend.position = c(0.05,0.9), legend.justification = c(0,1), legend.background=element_rect(fill = alpha("white", 0.5))) +
+  geom_vline(xintercept = forecast_date+.5, linetype=2, col="grey") + 
+  scale_y_continuous(labels = scales::comma, name="incident cases") +
   ggtitle(paste("case data and forecasts:", forecast_date))
 
 ## plot hospitalizations
@@ -155,8 +155,8 @@ hosp_plot <- ggplot(mapping = aes(x=date)) +
   theme(axis.ticks.length.x = unit(0.5, "cm"), 
         axis.text.x = element_text(vjust = 7, hjust = -0.2), 
         legend.position = "none") +
-  geom_vline(xintercept = forecast_date, linetype=2, col="grey") + 
-  ylab("incident hospitalizations") +
+  geom_vline(xintercept = forecast_date+.5, linetype=2, col="grey") + 
+  scale_y_continuous(labels = scales::comma, name = "incident hospitalizations") +
   ggtitle(paste("hosp data and forecasts:", forecast_date))
 
 cowplot::plot_grid(case_plot, hosp_plot, nrow=2, align="v")
