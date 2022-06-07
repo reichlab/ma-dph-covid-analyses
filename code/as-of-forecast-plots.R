@@ -86,16 +86,18 @@ plot_case_hosp_forecasts <- function(forecast_date,
   
   ## merge test- and report-date case data together
   final_data <- left_join(testdate_final_data, rptdate_final_data) |> 
-    pivot_longer(cols = -date, names_to = "data_type")
+    pivot_longer(cols = -date, names_to = "data_type") |> 
+    filter(date >= forecast_date-30, date <= forecast_date+30)
   
   final_data_smooth <- left_join(testdate_final_smooth, rptdate_final_smooth) |> 
-    pivot_longer(cols = -date, names_to = "data_type")
+    pivot_longer(cols = -date, names_to = "data_type") |> 
+    filter(date >= forecast_date-30, date <= forecast_date+30)
   
   
   ## compile final hosp data
   final_hosp_data <- covidcast_signal(data_source="hhs",
                                       signal="confirmed_admissions_covid_1d",
-                                      start_day = "2020-03-01", end_day = final_date,
+                                      start_day = forecast_date - 30, end_day = forecast_date + 30,
                                       geo_type = "state",
                                       geo_values = state) |> 
     transmute(date = time_value, inc_hosp = value)
@@ -134,11 +136,9 @@ plot_case_hosp_forecasts <- function(forecast_date,
     ## as of data lines
     # geom_point(data = as_of_data, aes(y=value), alpha=.5) +
     ## final data line until forecast date
-    geom_point(data = filter(final_data, date<=forecast_date), aes(y=value, color=data_type)) +
+    geom_point(data = filter(final_data), aes(y=value, color=data_type), alpha=0.5) +
     ## final smoothed data line until forecast date
     geom_line(data = filter(final_data_smooth, date<=forecast_date), aes(y=value, color=data_type), alpha=.6) +
-    ## final data line after forecast date
-    geom_point(data = filter(final_data, data_type %in% c("test_date_cases", "rpt_date_cases")), aes(y=value, color=data_type), alpha=0.5) +
     ## forecast ribbons
     geom_ribbon(data = filter(testdate_forecast_data, target_variable == "inc case"),
                 aes(x=target_end_date, ymin=q0.1, ymax=q0.9, fill=data_type), alpha=.3, size=0) +
@@ -212,15 +212,15 @@ plot_case_hosp_forecasts <- function(forecast_date,
 }
 
 
-ca1 <- plot_case_hosp_forecasts(forecast_date = "2022-01-10", state="ca")
-ca2 <- plot_case_hosp_forecasts(forecast_date = "2022-01-17", state="ca")
-ca3 <- plot_case_hosp_forecasts(forecast_date = "2022-01-24", state="ca")
+ca1 <- plot_case_hosp_forecasts(forecast_date = "2021-07-12", state="ca")
+ca2 <- plot_case_hosp_forecasts(forecast_date = "2021-07-19", state="ca")
+ca3 <- plot_case_hosp_forecasts(forecast_date = "2021-07-26", state="ca")
 
-ma1 <- plot_case_hosp_forecasts(forecast_date = "2022-01-10", state="ma")
-ma2 <- plot_case_hosp_forecasts(forecast_date = "2022-01-17", state="ma")
-ma3 <- plot_case_hosp_forecasts(forecast_date = "2022-01-24", state="ma")
+ma1 <- plot_case_hosp_forecasts(forecast_date = "2021-07-12", state="ma")
+ma2 <- plot_case_hosp_forecasts(forecast_date = "2021-07-19", state="ma")
+ma3 <- plot_case_hosp_forecasts(forecast_date = "2021-07-26", state="ma")
 
-pdf(file = "plots/ca-202201.pdf", height=15, width=8)
+pdf(file = "plots/ca-202107.pdf", height=15, width=8)
 cowplot::plot_grid(ca1, ca2, ca3, nrow=3)
 cowplot::plot_grid(ma1, ma2, ma3, nrow=3)
 dev.off()
