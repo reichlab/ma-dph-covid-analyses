@@ -234,7 +234,7 @@ ca_case_test_hosp_ccf <- broom::tidy(ccf(ca_data$`smooth test-date cases`,
                                          na.action=na.omit, plot = FALSE)) %>%
   dplyr::rename(`smooth test-date cases` = acf)
 ca_ccf <- dplyr::full_join(ca_case_report_hosp_ccf, ca_case_test_hosp_ccf, by = "lag") %>%
-  dplyr::full_join(ca_dph_case_report_hosp_ccf,, by = "lag") %>%
+  dplyr::full_join(ca_dph_case_report_hosp_ccf, by = "lag") %>%
   tidyr::pivot_longer(!lag, names_to = "Data", values_to ="value") %>%
   dplyr::mutate(location = "California")
 
